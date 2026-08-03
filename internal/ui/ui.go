@@ -62,6 +62,8 @@ func activityPresentation(action string) (charmlog.Level, string) {
 		return charmlog.InfoLevel, "Environment pushed ↑"
 	case "environment.fetched":
 		return charmlog.DebugLevel, "Environment fetched ↓"
+	case "environment.pulled":
+		return charmlog.DebugLevel, "Environment pulled ↓"
 	case "environment.removed":
 		return charmlog.ErrorLevel, "Environment removed ✕"
 	case "variable.added":

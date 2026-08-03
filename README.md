@@ -46,7 +46,7 @@ argus whoami                       Show the authenticated GitHub username
 argus logout                       Log out
 argus init [environment]           Create a project and push .env
 argus push [environment]           Push .env
-argus get <environment>            Fetch into .env
+argus pull <environment>           Pull into .env
 argus set <variable> [value]       Update one variable
 argus status                       Show local/remote synchronization status
 argus diff <environment>           Compare variable names without showing values
@@ -66,15 +66,15 @@ argus destroy <project>            Destroy a project by name
 
 `argus delete` requires confirmation and removes the variable remotely before updating `.env`. `argus project link` stores the association in the user-wide registry below, never inside the project. When a project has multiple environments and none is supplied, Argus presents an environment picker.
 
-## Safe fetches
+## Safe pulls
 
-When `argus get` encounters a non-empty `.env`, it moves the existing file to a timestamped backup before installing the fetched environment:
+When `argus pull` encounters a non-empty `.env` that was not created by the previous pull—or that has since been modified—it moves the existing file to a timestamped backup:
 
 ```text
 .env.backup.20260804-143052
 ```
 
-The replacement is written to a temporary owner-only file first. If installation fails, Argus attempts to restore the original file.
+Pulling another environment over an untouched Argus-pulled `.env` does not create a redundant backup. Replacements are written to a temporary owner-only file first. If a backed-up installation fails, Argus attempts to restore the original file.
 
 ## Development
 

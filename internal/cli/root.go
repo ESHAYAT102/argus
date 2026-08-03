@@ -61,7 +61,7 @@ func (app *application) rootCommand() *cobra.Command {
 		Example: `  argus auth
   argus init dev
   argus push prod
-  argus get dev
+  argus pull dev
   argus set DATABASE_URL`,
 	}
 	root.SetIn(app.in)
@@ -70,7 +70,7 @@ func (app *application) rootCommand() *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.AddCommand(
 		app.authCommand(), app.whoamiCommand(), app.logoutCommand(), app.initCommand(),
-		app.pushCommand(), app.getCommand(), app.setCommand(),
+		app.pushCommand(), app.pullCommand(), app.setCommand(),
 		app.statusCommand(), app.diffCommand(), app.deleteCommand(), app.projectCommand(),
 		app.listCommand(), app.historyCommand(), app.removeCommand(),
 		app.destroyCommand(),
@@ -292,8 +292,8 @@ func (app *application) pushCommand() *cobra.Command {
 	}}
 }
 
-func (app *application) getCommand() *cobra.Command {
-	return &cobra.Command{Use: "get <environment>", Short: "Fetch an environment into .env", Example: "  argus get dev\n  argus get prod", Args: requireEnvironment, RunE: func(command *cobra.Command, args []string) error {
+func (app *application) pullCommand() *cobra.Command {
+	return &cobra.Command{Use: "pull <environment>", Short: "Pull an environment into .env", Example: "  argus pull dev\n  argus pull prod", Args: requireEnvironment, RunE: func(command *cobra.Command, args []string) error {
 		directory, metadata, err := app.projectContext(command.Context(), true)
 		if err != nil {
 			return err
@@ -302,18 +302,32 @@ func (app *application) getCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		backup, err := dotenv.WriteSafely(directory, values, app.now())
+		managed := false
+		if metadata.PullSignature != "" {
+			signature, signatureErr := dotenv.FileSignature(directory)
+			managed = signatureErr == nil && signature == metadata.PullSignature
+		}
+		backup := ""
+		if managed {
+			err = dotenv.Write(directory, values)
+		} else {
+			backup, err = dotenv.WriteSafely(directory, values, app.now())
+		}
 		if err != nil {
 			return err
 		}
 		metadata.Environment = args[0]
+		metadata.PullSignature, err = dotenv.FileSignature(directory)
+		if err != nil {
+			return err
+		}
 		if err := config.Save(directory, metadata); err != nil {
 			return err
 		}
 		if backup != "" {
 			fmt.Fprintf(app.out, "Backup created: %s\n", filepath.Base(backup))
 		}
-		fmt.Fprintf(app.out, "%s Fetched %s from %s. %d variables written to .env.\n", ui.Success.Render("✓"), args[0], metadata.ProjectName, len(values))
+		fmt.Fprintf(app.out, "%s Pulled %s from %s. %d variables written to .env.\n", ui.Success.Render("✓"), args[0], metadata.ProjectName, len(values))
 		return nil
 	}}
 }
@@ -328,7 +342,7 @@ func (app *application) setCommand() *cobra.Command {
 			return err
 		}
 		if metadata.Environment == "" {
-			return errors.New("no active environment; run `argus get <environment>` or `argus push <environment>` first")
+			return errors.New("no active environment; run `argus pull <environment>` or `argus push <environment>` first")
 		}
 		value := ""
 		if len(args) == 2 {
@@ -390,7 +404,7 @@ func (app *application) statusCommand() *cobra.Command {
 			return err
 		}
 		if metadata.Environment == "" {
-			return errors.New("no active environment; run `argus get <environment>` or `argus push <environment>` first")
+			return errors.New("no active environment; run `argus pull <environment>` or `argus push <environment>` first")
 		}
 		local, err := dotenv.Read(directory)
 		if err != nil {
@@ -453,7 +467,7 @@ func (app *application) deleteCommand() *cobra.Command {
 			return err
 		}
 		if metadata.Environment == "" {
-			return errors.New("no active environment; run `argus get <environment>` or `argus push <environment>` first")
+			return errors.New("no active environment; run `argus pull <environment>` or `argus push <environment>` first")
 		}
 		confirmed, err := app.confirm(fmt.Sprintf("Delete %q from %q? This removes it locally and remotely.", args[0], metadata.Environment))
 		if err != nil {

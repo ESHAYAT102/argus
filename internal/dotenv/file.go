@@ -29,6 +29,16 @@ func Read(directory string) (map[string]string, error) {
 // WriteSafely writes values to .env. A non-empty existing file is moved to a
 // timestamped backup before the replacement is installed.
 func WriteSafely(directory string, values map[string]string, now time.Time) (backupPath string, err error) {
+	return write(directory, values, now, true)
+}
+
+// Write replaces .env atomically without backing up the existing file.
+func Write(directory string, values map[string]string) error {
+	_, err := write(directory, values, time.Time{}, false)
+	return err
+}
+
+func write(directory string, values map[string]string, now time.Time, backupExisting bool) (backupPath string, err error) {
 	path := filepath.Join(directory, Filename)
 	encoded, err := marshal(values)
 	if err != nil {
@@ -59,7 +69,7 @@ func WriteSafely(directory string, values map[string]string, now time.Time) (bac
 	}
 
 	info, statErr := os.Stat(path)
-	if statErr == nil && info.Size() > 0 {
+	if backupExisting && statErr == nil && info.Size() > 0 {
 		backupPath = uniqueBackupPath(directory, now)
 		if err := os.Rename(path, backupPath); err != nil {
 			return "", fmt.Errorf("back up existing .env: %w", err)
@@ -75,6 +85,16 @@ func WriteSafely(directory string, values map[string]string, now time.Time) (bac
 		return "", fmt.Errorf("install new .env: %w", err)
 	}
 	return backupPath, nil
+}
+
+// FileSignature identifies the current .env file using non-secret filesystem
+// metadata. It lets the CLI recognize an untouched file from the last pull.
+func FileSignature(directory string) (string, error) {
+	info, err := os.Stat(filepath.Join(directory, Filename))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano()), nil
 }
 
 func Set(directory, name, value string) error {

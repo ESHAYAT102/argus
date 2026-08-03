@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/argus-env/argus/internal/api"
 	"github.com/argus-env/argus/internal/config"
@@ -39,6 +40,15 @@ type deletionClient struct {
 	called bool
 }
 
+type pullClient struct {
+	api.Client
+	environments map[string]map[string]string
+}
+
+func (client *pullClient) Get(_ context.Context, _, environment string) (map[string]string, error) {
+	return client.environments[environment], nil
+}
+
 func (client *deletionClient) DeleteVariable(context.Context, string, string, string) error {
 	client.called = true
 	return client.err
@@ -66,10 +76,10 @@ func (client *authenticationClient) Logout(context.Context) error {
 	return nil
 }
 
-func TestGetMissingEnvironmentError(t *testing.T) {
+func TestPullMissingEnvironmentError(t *testing.T) {
 	app := &application{}
 	root := app.rootCommand()
-	command, _, err := root.Find([]string{"get"})
+	command, _, err := root.Find([]string{"pull"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +87,7 @@ func TestGetMissingEnvironmentError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing environment to fail")
 	}
-	want := "missing environment name\n\nUsage:\n  argus get <environment>\n\nExamples:\n  argus get dev\n  argus get prod"
+	want := "missing environment name\n\nUsage:\n  argus pull <environment>\n\nExamples:\n  argus pull dev\n  argus pull prod"
 	if err.Error() != want {
 		t.Fatalf("error:\n%s\n\nwant:\n%s", err, want)
 	}
@@ -272,6 +282,72 @@ func TestPushCommandReplacesSync(t *testing.T) {
 	}
 	if !foundPush {
 		t.Fatal("push command is not registered")
+	}
+}
+
+func TestPullCommandReplacesGet(t *testing.T) {
+	root := (&application{}).rootCommand()
+	foundPull := false
+	for _, command := range root.Commands() {
+		switch command.Name() {
+		case "pull":
+			foundPull = true
+		case "get":
+			t.Fatal("get command should no longer be registered")
+		}
+	}
+	if !foundPull {
+		t.Fatal("pull command is not registered")
+	}
+}
+
+func TestPullBackupBehavior(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		modifyBetween bool
+		wantBackups   int
+	}{
+		{name: "untouched pulled file", wantBackups: 0},
+		{name: "locally modified file", modifyBetween: true, wantBackups: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+			directory := t.TempDir()
+			if err := config.Save(directory, config.Project{ProjectID: "project-id", ProjectName: "demo"}); err != nil {
+				t.Fatal(err)
+			}
+			app := &application{
+				client: &pullClient{environments: map[string]map[string]string{
+					"dev":  {"MODE": "development"},
+					"prod": {"MODE": "production"},
+				}},
+				out: &bytes.Buffer{},
+				cwd: func() (string, error) { return directory, nil },
+				now: func() time.Time { return time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC) },
+			}
+			if err := app.pullCommand().RunE(app.pullCommand(), []string{"dev"}); err != nil {
+				t.Fatal(err)
+			}
+			if test.modifyBetween {
+				if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("MODE=custom-local-value\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := app.pullCommand().RunE(app.pullCommand(), []string{"prod"}); err != nil {
+				t.Fatal(err)
+			}
+			backups, err := filepath.Glob(filepath.Join(directory, ".env.backup.*"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(backups) != test.wantBackups {
+				t.Fatalf("backups = %v", backups)
+			}
+			values, err := dotenv.Read(directory)
+			if err != nil || values["MODE"] != "production" {
+				t.Fatalf("values=%#v err=%v", values, err)
+			}
+		})
 	}
 }
 

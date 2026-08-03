@@ -195,7 +195,7 @@ func (store *Store) Get(ctx context.Context, userID, projectID, environment stri
 		return nil, ErrNotFound
 	}
 	if recordActivity {
-		_, err = store.db.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action) SELECT $1,id,$3,'environment.fetched' FROM environments WHERE project_id=$1 AND name=$2`, projectID, environment, userID)
+		_, err = store.db.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action) SELECT $1,id,$3,'environment.pulled' FROM environments WHERE project_id=$1 AND name=$2`, projectID, environment, userID)
 	}
 	return values, err
 }
