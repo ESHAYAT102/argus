@@ -17,6 +17,7 @@ import (
 	"github.com/argus-env/argus/internal/project"
 	"github.com/argus-env/argus/internal/ui"
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -525,6 +526,12 @@ func (app *application) secretPrompt(title string) (string, error) {
 
 func (app *application) confirm(title string) (bool, error) {
 	confirmed := false
-	err := huh.NewConfirm().Title(title).Affirmative("Yes").Negative("No").Value(&confirmed).Run()
+	err := huh.NewConfirm().
+		Title(title).
+		Affirmative("Yes").
+		Negative("No").
+		WithButtonAlignment(lipgloss.Left).
+		Value(&confirmed).
+		Run()
 	return confirmed, err
 }
