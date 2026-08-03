@@ -3,8 +3,8 @@ package ui
 import (
 	"fmt"
 	"io"
-	"strings"
 
+	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -18,14 +18,42 @@ var (
 )
 
 func ProjectsTable(writer io.Writer, projects []struct{ Name, Environments string }) {
-	var body strings.Builder
-	body.WriteString(Title.Render("Projects      Environments"))
-	body.WriteString("\n")
-	body.WriteString(Muted.Render(strings.Repeat("─", 52)))
-	body.WriteString("\n")
+	projectWidth := len("Projects")
+	environmentWidth := len("Environments")
+	rows := make([]table.Row, 0, len(projects))
+
 	for _, project := range projects {
-		body.WriteString(fmt.Sprintf("%-14s%s\n", project.Name, project.Environments))
+		projectWidth = max(projectWidth, lipgloss.Width(project.Name))
+		environmentWidth = max(environmentWidth, lipgloss.Width(project.Environments))
+		rows = append(rows, table.Row{project.Name, project.Environments})
 	}
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(58)
-	fmt.Fprintln(writer, box.Render(body.String()))
+
+	columns := []table.Column{
+		{Title: "Projects", Width: projectWidth + 2},
+		{Title: "Environments", Width: environmentWidth + 2},
+	}
+	styles := table.DefaultStyles()
+	styles.Header = styles.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(muted).
+		BorderBottom(true).
+		Bold(false).
+		Foreground(purple)
+	// This table is a snapshot rather than an interactive picker, so no row
+	// should appear selected.
+	styles.Selected = styles.Cell
+
+	model := table.New(
+		table.WithColumns(columns),
+		table.WithRows(rows),
+		table.WithFocused(false),
+		table.WithHeight(max(2, len(rows)+1)),
+		table.WithStyles(styles),
+	)
+
+	box := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(muted).
+		Padding(1, 2)
+	fmt.Fprintln(writer, box.Render(model.View()))
 }
