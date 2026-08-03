@@ -97,3 +97,32 @@ Build production binaries with `make build`, or build the API container with:
 ```bash
 docker build -t argus-api .
 ```
+
+## Deploying the API to Vercel
+
+Argus includes a single Go Function in `api/index.go`. `vercel.json` routes `/health` and every `/v1/*` request to that function while preserving the route expected by the HTTP server. The function runs in Vercel's Singapore region (`sin1`) near the Neon database.
+
+Import the GitHub repository into Vercel with these settings:
+
+- Framework preset: **Other**
+- Root directory: repository root
+- Build command: leave empty
+- Output directory: leave empty
+
+Add these environment variables to Production and Preview:
+
+```text
+DATABASE_URL
+ARGUS_ENCRYPTION_KEY
+GITHUB_CLIENT_ID
+```
+
+Do not add `ARGUS_API_ADDRESS`; Vercel invokes the exported handler directly. The GitHub Device Flow does not require `GITHUB_CLIENT_SECRET`.
+
+After the first deployment, add `api.argus.eshayat.com` in the Vercel project's Domains settings and configure the DNS record Vercel provides. Verify the deployment with:
+
+```bash
+curl https://api.argus.eshayat.com/health
+```
+
+Vercel cold starts reuse a pool within each warm instance, limit that pool to three Neon connections, and serialize migrations using a PostgreSQL advisory lock. Override the per-instance limit only when necessary with `ARGUS_DB_MAX_CONNS`.

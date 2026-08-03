@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"time"
 
 	argus "github.com/argus-env/argus"
@@ -19,7 +21,7 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
 	}
-	configuration.MaxConns = 10
+	configuration.MaxConns = maxConnections()
 	configuration.MinConns = 0
 	configuration.MaxConnIdleTime = 5 * time.Minute
 	configuration.MaxConnLifetime = 30 * time.Minute
@@ -35,7 +37,25 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+	connection, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration connection: %w", err)
+	}
+	defer connection.Release()
+
+	// Cold serverless instances may initialize concurrently. A session-level
+	// advisory lock serializes the migration ledger and all migration work.
+	const migrationLock int64 = 0x41726775734d6967
+	if _, err := connection.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLock); err != nil {
+		return fmt.Errorf("lock migrations: %w", err)
+	}
+	defer func() {
+		unlockContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = connection.Exec(unlockContext, `SELECT pg_advisory_unlock($1)`, migrationLock)
+	}()
+
+	if _, err := connection.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return fmt.Errorf("create migration ledger: %w", err)
 	}
 	entries, err := argus.Migrations.ReadDir("migrations")
@@ -48,7 +68,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			continue
 		}
 		var applied bool
-		if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name=$1)`, entry.Name()).Scan(&applied); err != nil {
+		if err := connection.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name=$1)`, entry.Name()).Scan(&applied); err != nil {
 			return err
 		}
 		if applied {
@@ -58,7 +78,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if err != nil {
 			return err
 		}
-		tx, err := pool.Begin(ctx)
+		tx, err := connection.Begin(ctx)
 		if err != nil {
 			return err
 		}
@@ -75,4 +95,18 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 	return nil
+}
+
+func maxConnections() int32 {
+	maximum := int32(10)
+	if os.Getenv("VERCEL") != "" {
+		maximum = 3
+	}
+	if configured := os.Getenv("ARGUS_DB_MAX_CONNS"); configured != "" {
+		parsed, err := strconv.ParseInt(configured, 10, 32)
+		if err == nil && parsed >= 1 && parsed <= 50 {
+			maximum = int32(parsed)
+		}
+	}
+	return maximum
 }

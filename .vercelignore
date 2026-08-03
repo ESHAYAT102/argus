@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+.git
+bin
+Dockerfile
+SECURITY.md

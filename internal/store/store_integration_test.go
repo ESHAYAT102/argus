@@ -22,8 +22,11 @@ func TestStoreLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if err := database.Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
+	migrations := make(chan error, 2)
+	go func() { migrations <- database.Migrate(ctx, pool) }()
+	go func() { migrations <- database.Migrate(ctx, pool) }()
+	for range 2 {
+		if err := <-migrations; err != nil { t.Fatal(err) }
 	}
 	cipher, err := secrets.New(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("i", 32))))
 	if err != nil {
