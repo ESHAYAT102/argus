@@ -23,12 +23,13 @@ import (
 const defaultAPIURL = "https://api.argus.eshayat.com"
 
 type application struct {
-	client api.Client
-	in     io.Reader
-	out    io.Writer
-	errOut io.Writer
-	cwd    func() (string, error)
-	now    func() time.Time
+	client          api.Client
+	in              io.Reader
+	out             io.Writer
+	errOut          io.Writer
+	cwd             func() (string, error)
+	now             func() time.Time
+	discoverProject func(string) (project.Discovery, error)
 }
 
 func Execute() error {
@@ -39,7 +40,7 @@ func Execute() error {
 	app := &application{
 		client: api.NewHTTPClient(baseURL, config.SessionStore{}),
 		in:     os.Stdin, out: os.Stdout, errOut: os.Stderr,
-		cwd: os.Getwd, now: time.Now,
+		cwd: os.Getwd, now: time.Now, discoverProject: project.Discover,
 	}
 	command := app.rootCommand()
 	if err := command.Execute(); err != nil {
@@ -189,7 +190,7 @@ func (app *application) initCommand() *cobra.Command {
 		}
 
 		name, repository := "", ""
-		discovered, discoveryErr := project.Discover(directory)
+		discovered, discoveryErr := app.discover(directory)
 		if discoveryErr == nil {
 			name, repository, directory = discovered.Name, discovered.Repository, discovered.Root
 		} else {
@@ -343,7 +344,7 @@ func (app *application) historyCommand() *cobra.Command {
 		if directory, err := app.cwd(); err == nil {
 			if metadata, err := config.Load(directory); err == nil {
 				projectID = metadata.ProjectID
-			} else if discovered, discoveryErr := project.Discover(directory); discoveryErr == nil {
+			} else if discovered, discoveryErr := app.discover(directory); discoveryErr == nil {
 				if metadata, loadErr := config.Load(discovered.Root); loadErr == nil {
 					projectID = metadata.ProjectID
 				}
@@ -436,14 +437,30 @@ func (app *application) projectContext(ctx context.Context, allowLookup bool) (s
 	if err == nil {
 		return directory, metadata, nil
 	}
-	if discovered, discoveryErr := project.Discover(directory); discoveryErr == nil {
+	if discovered, discoveryErr := app.discover(directory); discoveryErr == nil {
 		metadata, err = config.Load(discovered.Root)
 		if err == nil {
 			return discovered.Root, metadata, nil
 		}
+		if allowLookup {
+			projects, listErr := app.client.List(ctx)
+			if listErr != nil {
+				return "", config.Project{}, listErr
+			}
+			for _, candidate := range projects {
+				if strings.EqualFold(candidate.Repository, discovered.Repository) {
+					metadata = config.Project{ProjectID: candidate.ID, ProjectName: candidate.Name}
+					if saveErr := config.Save(discovered.Root, metadata); saveErr != nil {
+						return "", config.Project{}, saveErr
+					}
+					return discovered.Root, metadata, nil
+				}
+			}
+			return "", config.Project{}, fmt.Errorf("GitHub repository %q is not initialized in Argus; run `argus init` first", discovered.Repository)
+		}
 	}
 	if allowLookup {
-		fmt.Fprintln(app.out, "This directory is not connected to an Argus project.")
+		fmt.Fprintln(app.out, "The current directory is not a GitHub repository or registered Argus project.")
 		name, promptErr := app.textPrompt("Project name", "")
 		if promptErr != nil {
 			return "", config.Project{}, promptErr
@@ -464,6 +481,13 @@ func (app *application) projectContext(ctx context.Context, allowLookup bool) (s
 		return "", config.Project{}, fmt.Errorf("project %q was not found", name)
 	}
 	return "", config.Project{}, errors.New("directory is not connected to Argus; run `argus init` first")
+}
+
+func (app *application) discover(directory string) (project.Discovery, error) {
+	if app.discoverProject != nil {
+		return app.discoverProject(directory)
+	}
+	return project.Discover(directory)
 }
 
 func (app *application) environmentArgument(args []string) (string, error) {
