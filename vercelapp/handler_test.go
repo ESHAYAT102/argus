@@ -1,4 +1,4 @@
-package handler
+package vercelapp
 
 import (
 	"net/http/httptest"
