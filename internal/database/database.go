@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"os"
@@ -9,9 +10,11 @@ import (
 	"strconv"
 	"time"
 
-	argus "github.com/argus-env/argus"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+//go:embed migrations/*.sql
+var migrations embed.FS
 
 func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if databaseURL == "" {
@@ -58,7 +61,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := connection.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return fmt.Errorf("create migration ledger: %w", err)
 	}
-	entries, err := argus.Migrations.ReadDir("migrations")
+	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
 		return err
 	}
@@ -74,7 +77,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if applied {
 			continue
 		}
-		contents, err := argus.Migrations.ReadFile("migrations/" + entry.Name())
+		contents, err := migrations.ReadFile("migrations/" + entry.Name())
 		if err != nil {
 			return err
 		}
