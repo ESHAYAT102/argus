@@ -4,6 +4,40 @@ Argus is a Go CLI for managing named sets of environment variables across GitHub
 
 The repository contains both the `argus` CLI and its Neon-backed API service.
 
+## Install
+
+The installer clones this repository, builds `argus` with Go, copies the binary into your user binary directory, and removes the cloned repository when it is done.
+
+If Go or Git is missing, the installer asks before installing them with the platform package manager. It supports pacman, apt, dnf, yum, zypper, apk, xbps, Homebrew, winget, Chocolatey, and Scoop.
+
+macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ESHAYAT102/argus/main/scripts/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ESHAYAT102/argus/main/scripts/install.ps1 | iex
+```
+
+The binary is installed to `~/.local/bin/argus` on macOS and Linux, or `$HOME\.local\bin\argus.exe` on Windows.
+
+## Uninstall
+
+macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ESHAYAT102/argus/main/scripts/uninstall.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ESHAYAT102/argus/main/scripts/uninstall.ps1 | iex
+```
+
 ## Commands
 
 ```text
