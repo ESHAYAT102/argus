@@ -3,10 +3,75 @@ package ui
 import (
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
+	"github.com/argus-env/argus/internal/api"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
+	charmlog "github.com/charmbracelet/log"
 )
+
+func ActivityLog(writer io.Writer, activity []api.Activity) {
+	if len(activity) == 0 {
+		fmt.Fprintln(writer, "Nothing has happened here yet.")
+		return
+	}
+
+	logger := charmlog.NewWithOptions(writer, charmlog.Options{
+		Level:           charmlog.DebugLevel,
+		ReportTimestamp: true,
+		TimeFormat:      "Jan 02 15:04",
+	})
+	styles := charmlog.DefaultStyles()
+	styles.Levels[charmlog.DebugLevel] = styles.Levels[charmlog.DebugLevel].SetString("PULL")
+	styles.Levels[charmlog.InfoLevel] = styles.Levels[charmlog.InfoLevel].SetString("DONE")
+	styles.Levels[charmlog.WarnLevel] = styles.Levels[charmlog.WarnLevel].SetString("EDIT")
+	styles.Levels[charmlog.ErrorLevel] = styles.Levels[charmlog.ErrorLevel].SetString("GONE")
+	styles.Keys["actor"] = lipgloss.NewStyle().Foreground(lipgloss.Color("99"))
+	styles.Values["actor"] = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("213"))
+	styles.Keys["env"] = lipgloss.NewStyle().Foreground(lipgloss.Color("99"))
+	styles.Values["env"] = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	styles.Keys["variable"] = lipgloss.NewStyle().Foreground(lipgloss.Color("99"))
+	styles.Values["variable"] = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	logger.SetStyles(styles)
+
+	for _, event := range activity {
+		createdAt := event.CreatedAt.Local()
+		logger.SetTimeFunction(func(time.Time) time.Time { return createdAt })
+		fields := []any{"actor", "@" + event.Actor}
+		if event.Environment != "" {
+			fields = append(fields, "env", event.Environment)
+		}
+		if event.Variable != "" {
+			fields = append(fields, "variable", event.Variable)
+		}
+
+		level, message := activityPresentation(event.Action)
+		logger.Log(level, message, fields...)
+	}
+}
+
+func activityPresentation(action string) (charmlog.Level, string) {
+	switch action {
+	case "project.initialized":
+		return charmlog.InfoLevel, "Project initialized ✨"
+	case "environment.created":
+		return charmlog.InfoLevel, "Environment created 🌱"
+	case "environment.pushed":
+		return charmlog.InfoLevel, "Environment pushed ↑"
+	case "environment.fetched":
+		return charmlog.DebugLevel, "Environment fetched ↓"
+	case "environment.removed":
+		return charmlog.ErrorLevel, "Environment removed ✕"
+	case "variable.added":
+		return charmlog.InfoLevel, "Variable added +"
+	case "variable.changed":
+		return charmlog.WarnLevel, "Variable changed ◆"
+	default:
+		return charmlog.InfoLevel, strings.ReplaceAll(action, ".", " ")
+	}
+}
 
 var (
 	purple  = lipgloss.Color("99")

@@ -370,13 +370,7 @@ func (app *application) historyCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		for _, event := range activity {
-			details := event.Environment
-			if event.Variable != "" {
-				details += " " + event.Variable
-			}
-			fmt.Fprintf(app.out, "%-20s %-18s %-16s %s\n", event.CreatedAt.Local().Format("2006-01-02 15:04"), event.Actor, event.Action, strings.TrimSpace(details))
-		}
+		ui.ActivityLog(app.out, activity)
 		return nil
 	}}
 }
