@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/log v0.4.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.1
 )
 

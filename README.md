@@ -78,7 +78,22 @@ Set `ARGUS_API_URL` to point the CLI at a development API:
 ARGUS_API_URL=http://localhost:8080 go run ./cmd/argus list
 ```
 
-Local directory associations are stored in `.argus.toml`. It contains project identifiers and the active environment, never secret values.
+Directory associations for every project are stored in one user registry. It contains canonical directory paths, project identifiers, and active environments—never secret values.
+
+- Linux and macOS: `${XDG_DATA_HOME:-~/.local/share}/argus/argus.toml`
+- Windows: `%LOCALAPPDATA%\Argus\argus.toml`
+
+Argus uses the current project directory to select the correct registry entry. Set `ARGUS_DATA_HOME` to override the Argus data directory for a portable installation.
+
+```toml
+version = 1
+
+[[projects]]
+directory = "/home/esh/code/portfolio"
+project_id = "..."
+project_name = "portfolio"
+environment = "prod"
+```
 
 ## Neon backend
 

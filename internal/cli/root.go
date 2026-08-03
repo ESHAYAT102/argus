@@ -321,6 +321,10 @@ func (app *application) historyCommand() *cobra.Command {
 		if directory, err := app.cwd(); err == nil {
 			if metadata, err := config.Load(directory); err == nil {
 				projectID = metadata.ProjectID
+			} else if discovered, discoveryErr := project.Discover(directory); discoveryErr == nil {
+				if metadata, loadErr := config.Load(discovered.Root); loadErr == nil {
+					projectID = metadata.ProjectID
+				}
 			}
 		}
 		activity, err := app.client.History(command.Context(), projectID)
@@ -362,7 +366,7 @@ func (app *application) removeCommand() *cobra.Command {
 
 func (app *application) destroyCommand() *cobra.Command {
 	return &cobra.Command{Use: "destroy [project]", Short: "Permanently destroy a project", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
-		directory, metadata, err := app.destroyTarget(command.Context(), args)
+		_, metadata, err := app.destroyTarget(command.Context(), args)
 		if err != nil {
 			return err
 		}
@@ -377,8 +381,8 @@ func (app *application) destroyCommand() *cobra.Command {
 		if err := app.client.DestroyProject(command.Context(), metadata.ProjectID); err != nil {
 			return err
 		}
-		if directory != "" {
-			_ = os.Remove(config.Path(directory))
+		if err := config.RemoveProject(metadata.ProjectID); err != nil {
+			return fmt.Errorf("project was destroyed, but its local registry entries could not be removed: %w", err)
 		}
 		fmt.Fprintf(app.out, "%s Destroyed project %s.\n", ui.Success.Render("✓"), name)
 		return nil
