@@ -18,6 +18,14 @@ func TestProjectsTable(t *testing.T) {
 			t.Errorf("ProjectsTable() output does not contain %q:\n%s", want, output.String())
 		}
 	}
+
+	lines := strings.Split(output.String(), "\n")
+	if !strings.HasPrefix(lines[1], "│ Projects") {
+		t.Errorf("header has unexpected left padding: %q", lines[1])
+	}
+	if !strings.HasPrefix(lines[3], "│ SASS") {
+		t.Errorf("first row has unexpected left padding: %q", lines[3])
+	}
 }
 
 func TestProjectsTableWithNoProjects(t *testing.T) {

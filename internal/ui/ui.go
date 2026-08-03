@@ -41,7 +41,7 @@ func ProjectsTable(writer io.Writer, projects []struct{ Name, Environments strin
 		Foreground(purple)
 	// This table is a snapshot rather than an interactive picker, so no row
 	// should appear selected.
-	styles.Selected = styles.Cell
+	styles.Selected = lipgloss.NewStyle()
 
 	model := table.New(
 		table.WithColumns(columns),
