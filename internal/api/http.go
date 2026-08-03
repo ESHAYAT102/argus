@@ -213,6 +213,48 @@ func (client *HTTPClient) DestroyProject(ctx context.Context, projectID string) 
 	return client.request(ctx, http.MethodDelete, "/v1/projects/"+url.PathEscape(projectID), nil, nil, true)
 }
 
+func (client *HTTPClient) ShareProject(ctx context.Context, projectID, username, role string) (Invitation, error) {
+	var invitation Invitation
+	path := fmt.Sprintf("/v1/projects/%s/invitations", url.PathEscape(projectID))
+	err := client.request(ctx, http.MethodPost, path, map[string]string{"username": username, "role": role}, &invitation, true)
+	return invitation, err
+}
+
+func (client *HTTPClient) Members(ctx context.Context, projectID string) ([]Member, error) {
+	var response struct {
+		Members []Member `json:"members"`
+	}
+	path := fmt.Sprintf("/v1/projects/%s/members", url.PathEscape(projectID))
+	err := client.request(ctx, http.MethodGet, path, nil, &response, true)
+	return response.Members, err
+}
+
+func (client *HTTPClient) UpdateMemberRole(ctx context.Context, projectID, username, role string) error {
+	path := fmt.Sprintf("/v1/projects/%s/members/%s", url.PathEscape(projectID), url.PathEscape(username))
+	return client.request(ctx, http.MethodPatch, path, map[string]string{"role": role}, nil, true)
+}
+
+func (client *HTTPClient) RemoveMember(ctx context.Context, projectID, username string) error {
+	path := fmt.Sprintf("/v1/projects/%s/members/%s", url.PathEscape(projectID), url.PathEscape(username))
+	return client.request(ctx, http.MethodDelete, path, nil, nil, true)
+}
+
+func (client *HTTPClient) Invitations(ctx context.Context) ([]Invitation, error) {
+	var response struct {
+		Invitations []Invitation `json:"invitations"`
+	}
+	err := client.request(ctx, http.MethodGet, "/v1/invitations", nil, &response, true)
+	return response.Invitations, err
+}
+
+func (client *HTTPClient) AcceptInvitation(ctx context.Context, invitationID string) error {
+	return client.request(ctx, http.MethodPost, "/v1/invitations/"+url.PathEscape(invitationID)+"/accept", nil, nil, true)
+}
+
+func (client *HTTPClient) DeclineInvitation(ctx context.Context, invitationID string) error {
+	return client.request(ctx, http.MethodPost, "/v1/invitations/"+url.PathEscape(invitationID)+"/decline", nil, nil, true)
+}
+
 func (client *HTTPClient) request(ctx context.Context, method, path string, input, output any, authenticated bool) error {
 	var body io.Reader
 	if input != nil {

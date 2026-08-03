@@ -72,6 +72,7 @@ func (app *application) rootCommand() *cobra.Command {
 		app.authCommand(), app.whoamiCommand(), app.logoutCommand(), app.initCommand(),
 		app.pushCommand(), app.pullCommand(), app.setCommand(),
 		app.statusCommand(), app.diffCommand(), app.deleteCommand(), app.projectCommand(),
+		app.invitesCommand(),
 		app.listCommand(), app.historyCommand(), app.removeCommand(),
 		app.destroyCommand(),
 	)
@@ -134,6 +135,18 @@ func projectLinkArgs(command *cobra.Command, args []string) error {
 		return argumentError(command, "too many arguments: "+quotedArguments(args[2:]))
 	}
 	return nil
+}
+
+func exactArguments(count int, missing string) cobra.PositionalArgs {
+	return func(command *cobra.Command, args []string) error {
+		if len(args) < count {
+			return argumentError(command, missing)
+		}
+		if len(args) > count {
+			return argumentError(command, "too many arguments: "+quotedArguments(args[count:]))
+		}
+		return nil
+	}
 }
 
 func setArgs(command *cobra.Command, args []string) error {
@@ -496,8 +509,136 @@ func (app *application) deleteCommand() *cobra.Command {
 
 func (app *application) projectCommand() *cobra.Command {
 	command := &cobra.Command{Use: "project", Short: "Manage project connections"}
-	command.AddCommand(app.projectLinkCommand())
+	command.AddCommand(app.projectLinkCommand(), app.projectShareCommand(), app.projectMembersCommand(), app.projectRoleCommand(), app.projectUnshareCommand())
 	return command
+}
+
+func (app *application) projectShareCommand() *cobra.Command {
+	role := ""
+	command := &cobra.Command{Use: "share <project> <github-user>", Short: "Invite a GitHub user to a project", Example: "  argus project share portfolio octocat\n  argus project share portfolio octocat --role viewer", Args: exactArguments(2, "project name and GitHub username are required"), RunE: func(command *cobra.Command, args []string) error {
+		metadata, err := app.destroyTarget(command.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		selectedRole := strings.ToLower(role)
+		if selectedRole == "" {
+			selectedRole, err = app.selectRole()
+			if err != nil {
+				return err
+			}
+		}
+		if !validMemberRole(selectedRole) {
+			return errors.New("role must be admin, member, or viewer")
+		}
+		username := strings.TrimPrefix(args[1], "@")
+		invitation, err := app.client.ShareProject(command.Context(), metadata.ProjectID, username, selectedRole)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(app.out, "%s Invited @%s to %s as %s. Invitation expires %s.\n", ui.Success.Render("✓"), username, metadata.ProjectName, invitation.Role, invitation.ExpiresAt.Local().Format("Jan 2"))
+		return nil
+	}}
+	command.Flags().StringVar(&role, "role", "", "access role: admin, member, or viewer")
+	return command
+}
+
+func (app *application) projectMembersCommand() *cobra.Command {
+	return &cobra.Command{Use: "members <project>", Short: "List project members", Args: requireProject, RunE: func(command *cobra.Command, args []string) error {
+		metadata, err := app.destroyTarget(command.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		members, err := app.client.Members(command.Context(), metadata.ProjectID)
+		if err != nil {
+			return err
+		}
+		ui.MembersTable(app.out, members)
+		return nil
+	}}
+}
+
+func (app *application) projectRoleCommand() *cobra.Command {
+	return &cobra.Command{Use: "role <project> <github-user> <role>", Short: "Change a project member's role", Example: "  argus project role portfolio octocat viewer", Args: exactArguments(3, "project, GitHub username, and role are required"), RunE: func(command *cobra.Command, args []string) error {
+		role := strings.ToLower(args[2])
+		if !validMemberRole(role) {
+			return errors.New("role must be admin, member, or viewer")
+		}
+		metadata, err := app.destroyTarget(command.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		username := strings.TrimPrefix(args[1], "@")
+		if err := app.client.UpdateMemberRole(command.Context(), metadata.ProjectID, username, role); err != nil {
+			return err
+		}
+		fmt.Fprintf(app.out, "%s Changed @%s to %s in %s.\n", ui.Success.Render("✓"), username, role, metadata.ProjectName)
+		return nil
+	}}
+}
+
+func (app *application) projectUnshareCommand() *cobra.Command {
+	return &cobra.Command{Use: "unshare <project> <github-user>", Short: "Remove a user's project access", Args: exactArguments(2, "project name and GitHub username are required"), RunE: func(command *cobra.Command, args []string) error {
+		metadata, err := app.destroyTarget(command.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		username := strings.TrimPrefix(args[1], "@")
+		confirmed, err := app.confirm(fmt.Sprintf("Remove @%s from %q? They will immediately lose access.", username, metadata.ProjectName))
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			fmt.Fprintln(app.out, "Access removal cancelled.")
+			return nil
+		}
+		if err := app.client.RemoveMember(command.Context(), metadata.ProjectID, username); err != nil {
+			return err
+		}
+		fmt.Fprintf(app.out, "%s Removed @%s from %s.\n", ui.Success.Render("✓"), username, metadata.ProjectName)
+		return nil
+	}}
+}
+
+func (app *application) invitesCommand() *cobra.Command {
+	command := &cobra.Command{Use: "invites", Short: "View project invitations", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
+		invitations, err := app.client.Invitations(command.Context())
+		if err != nil {
+			return err
+		}
+		ui.InvitationsTable(app.out, invitations)
+		return nil
+	}}
+	command.AddCommand(
+		&cobra.Command{Use: "accept <id>", Short: "Accept a project invitation", Args: exactArguments(1, "invitation id is required"), RunE: func(command *cobra.Command, args []string) error {
+			if err := app.client.AcceptInvitation(command.Context(), args[0]); err != nil {
+				return err
+			}
+			fmt.Fprintln(app.out, ui.Success.Render("✓ Invitation accepted."))
+			return nil
+		}},
+		&cobra.Command{Use: "decline <id>", Short: "Decline a project invitation", Args: exactArguments(1, "invitation id is required"), RunE: func(command *cobra.Command, args []string) error {
+			if err := app.client.DeclineInvitation(command.Context(), args[0]); err != nil {
+				return err
+			}
+			fmt.Fprintln(app.out, "Invitation declined.")
+			return nil
+		}},
+	)
+	return command
+}
+
+func (app *application) selectRole() (string, error) {
+	value := "member"
+	err := huh.NewSelect[string]().Title("Role").Options(
+		huh.NewOption("Member — manage environments and variables", "member"),
+		huh.NewOption("Viewer — read only", "viewer"),
+		huh.NewOption("Admin — manage members and variables", "admin"),
+	).Value(&value).Run()
+	return value, err
+}
+
+func validMemberRole(role string) bool {
+	return role == "admin" || role == "member" || role == "viewer"
 }
 
 func (app *application) projectLinkCommand() *cobra.Command {

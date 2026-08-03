@@ -4,6 +4,7 @@ package store_test
 
 import (
 	"encoding/base64"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -94,6 +95,41 @@ func TestStoreLifecycle(t *testing.T) {
 	projects, err := data.List(ctx, userID)
 	if err != nil || len(projects) != 1 {
 		t.Fatalf("projects=%#v err=%v", projects, err)
+	}
+	memberToken, err := data.CreateSession(ctx, stamp+1, "invited-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberID, err := data.Authenticate(ctx, memberToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invitation, err := data.Invite(ctx, userID, project.ID, "invited-user", "viewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invitations, err := data.Invitations(ctx, memberID)
+	if err != nil || len(invitations) != 1 || invitations[0].ID != invitation.ID {
+		t.Fatalf("invitations=%#v err=%v", invitations, err)
+	}
+	if err := data.RespondInvitation(ctx, memberID, invitation.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.Push(ctx, memberID, project.ID, "prod", map[string]string{"SECOND": "blocked"}); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("viewer push error=%v", err)
+	}
+	if err := data.UpdateMemberRole(ctx, userID, project.ID, "invited-user", "member"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.Push(ctx, memberID, project.ID, "prod", map[string]string{"SECOND": "member-write"}); err != nil {
+		t.Fatal(err)
+	}
+	members, err := data.Members(ctx, userID, project.ID)
+	if err != nil || len(members) != 2 {
+		t.Fatalf("members=%#v err=%v", members, err)
+	}
+	if err := data.RemoveMember(ctx, userID, project.ID, "invited-user"); err != nil {
+		t.Fatal(err)
 	}
 	events, err := data.History(ctx, userID, project.ID)
 	if err != nil || len(events) < 6 {

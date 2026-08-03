@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/argus-env/argus/internal/api"
@@ -17,6 +18,8 @@ import (
 )
 
 var ErrNotFound = errors.New("not found")
+var ErrForbidden = errors.New("forbidden")
+var ErrConflict = errors.New("conflict")
 
 type Store struct {
 	db     *pgxpool.Pool
@@ -123,7 +126,7 @@ func (store *Store) Push(ctx context.Context, userID, projectID, environment str
 		return api.Environment{}, err
 	}
 	defer tx.Rollback(ctx)
-	if err = authorize(ctx, tx, userID, projectID); err != nil {
+	if err = authorizeWrite(ctx, tx, userID, projectID); err != nil {
 		return api.Environment{}, err
 	}
 	var existed bool
@@ -235,8 +238,11 @@ func (store *Store) Set(ctx context.Context, userID, projectID, environment, nam
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = authorizeWrite(ctx, tx, userID, projectID); err != nil {
+		return err
+	}
 	var environmentID string
-	err = tx.QueryRow(ctx, `SELECT e.id FROM environments e JOIN project_members m ON m.project_id=e.project_id WHERE e.project_id=$1 AND e.name=$2 AND m.user_id=$3`, projectID, environment, userID).Scan(&environmentID)
+	err = tx.QueryRow(ctx, `SELECT id FROM environments WHERE project_id=$1 AND name=$2`, projectID, environment).Scan(&environmentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -264,8 +270,11 @@ func (store *Store) DeleteVariable(ctx context.Context, userID, projectID, envir
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = authorizeWrite(ctx, tx, userID, projectID); err != nil {
+		return err
+	}
 	var environmentID string
-	err = tx.QueryRow(ctx, `SELECT e.id FROM environments e JOIN project_members m ON m.project_id=e.project_id WHERE e.project_id=$1 AND e.name=$2 AND m.user_id=$3`, projectID, environment, userID).Scan(&environmentID)
+	err = tx.QueryRow(ctx, `SELECT id FROM environments WHERE project_id=$1 AND name=$2`, projectID, environment).Scan(&environmentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -346,7 +355,7 @@ func (store *Store) RemoveEnvironment(ctx context.Context, userID, projectID, en
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if err = authorize(ctx, tx, userID, projectID); err != nil {
+	if err = authorizeWrite(ctx, tx, userID, projectID); err != nil {
 		return err
 	}
 	var environmentID string
@@ -390,17 +399,204 @@ func (store *Store) putVariable(ctx context.Context, tx pgx.Tx, userID, environm
 	return existed, err
 }
 
-func authorize(ctx context.Context, tx pgx.Tx, userID, projectID string) error {
-	var ok bool
-	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2)`, projectID, userID).Scan(&ok)
+func authorizeWrite(ctx context.Context, tx pgx.Tx, userID, projectID string) error {
+	var role string
+	err := tx.QueryRow(ctx, `SELECT role FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return ErrNotFound
+	if role == "viewer" {
+		return ErrForbidden
 	}
 	return nil
 }
+
+func (store *Store) Invite(ctx context.Context, userID, projectID, username, role string) (api.Invitation, error) {
+	if !validShareRole(role) {
+		return api.Invitation{}, ErrForbidden
+	}
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return api.Invitation{}, err
+	}
+	defer tx.Rollback(ctx)
+	actorRole, err := memberRole(ctx, tx, userID, projectID)
+	if err != nil {
+		return api.Invitation{}, err
+	}
+	if actorRole != "owner" && actorRole != "admin" {
+		return api.Invitation{}, ErrForbidden
+	}
+	if role == "admin" && actorRole != "owner" {
+		return api.Invitation{}, ErrForbidden
+	}
+	var actorLogin string
+	if err = tx.QueryRow(ctx, `SELECT github_login FROM users WHERE id=$1`, userID).Scan(&actorLogin); err != nil {
+		return api.Invitation{}, err
+	}
+	if strings.EqualFold(actorLogin, username) {
+		return api.Invitation{}, ErrConflict
+	}
+	var memberExists bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_members m JOIN users u ON u.id=m.user_id WHERE m.project_id=$1 AND lower(u.github_login)=lower($2))`, projectID, username).Scan(&memberExists); err != nil {
+		return api.Invitation{}, err
+	}
+	if memberExists {
+		return api.Invitation{}, ErrConflict
+	}
+	if _, err = tx.Exec(ctx, `UPDATE project_invitations SET status='declined',responded_at=now() WHERE project_id=$1 AND lower(invitee_login)=lower($2) AND status='pending' AND expires_at<=now()`, projectID, username); err != nil {
+		return api.Invitation{}, err
+	}
+	var invitation api.Invitation
+	err = tx.QueryRow(ctx, `INSERT INTO project_invitations(project_id,inviter_id,invitee_login,role) VALUES($1,$2,$3,$4) RETURNING id,project_id,role,expires_at`, projectID, userID, username, role).Scan(&invitation.ID, &invitation.ProjectID, &invitation.Role, &invitation.ExpiresAt)
+	if err != nil {
+		return api.Invitation{}, err
+	}
+	invitation.Inviter = actorLogin
+	if err = tx.QueryRow(ctx, `SELECT name FROM projects WHERE id=$1`, projectID).Scan(&invitation.Project); err != nil {
+		return api.Invitation{}, err
+	}
+	return invitation, tx.Commit(ctx)
+}
+
+func (store *Store) Members(ctx context.Context, userID, projectID string) ([]api.Member, error) {
+	var allowed bool
+	if err := store.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2)`, projectID, userID).Scan(&allowed); err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, ErrNotFound
+	}
+	rows, err := store.db.Query(ctx, `SELECT u.github_login,m.role FROM project_members m JOIN users u ON u.id=m.user_id WHERE m.project_id=$1 ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'member' THEN 2 ELSE 3 END,lower(u.github_login)`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	members := []api.Member{}
+	for rows.Next() {
+		var member api.Member
+		if err := rows.Scan(&member.Username, &member.Role); err != nil {
+			return nil, err
+		}
+		members = append(members, member)
+	}
+	return members, rows.Err()
+}
+
+func (store *Store) UpdateMemberRole(ctx context.Context, userID, projectID, username, role string) error {
+	if !validShareRole(role) {
+		return ErrForbidden
+	}
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	actorRole, err := memberRole(ctx, tx, userID, projectID)
+	if err != nil {
+		return err
+	}
+	var targetID, targetRole string
+	err = tx.QueryRow(ctx, `SELECT m.user_id,m.role FROM project_members m JOIN users u ON u.id=m.user_id WHERE m.project_id=$1 AND lower(u.github_login)=lower($2)`, projectID, username).Scan(&targetID, &targetRole)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if targetRole == "owner" || (actorRole != "owner" && (targetRole == "admin" || role == "admin")) || (actorRole != "owner" && actorRole != "admin") {
+		return ErrForbidden
+	}
+	if _, err = tx.Exec(ctx, `UPDATE project_members SET role=$1 WHERE project_id=$2 AND user_id=$3`, role, projectID, targetID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (store *Store) RemoveMember(ctx context.Context, userID, projectID, username string) error {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	actorRole, err := memberRole(ctx, tx, userID, projectID)
+	if err != nil {
+		return err
+	}
+	var targetID, targetRole string
+	err = tx.QueryRow(ctx, `SELECT m.user_id,m.role FROM project_members m JOIN users u ON u.id=m.user_id WHERE m.project_id=$1 AND lower(u.github_login)=lower($2)`, projectID, username).Scan(&targetID, &targetRole)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if targetRole == "owner" || (actorRole != "owner" && targetRole == "admin") || (actorRole != "owner" && actorRole != "admin") {
+		return ErrForbidden
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, targetID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (store *Store) Invitations(ctx context.Context, userID string) ([]api.Invitation, error) {
+	rows, err := store.db.Query(ctx, `SELECT i.id,i.project_id,p.name,u.github_login,i.role,i.expires_at FROM project_invitations i JOIN projects p ON p.id=i.project_id JOIN users u ON u.id=i.inviter_id JOIN users recipient ON recipient.id=$1 WHERE lower(i.invitee_login)=lower(recipient.github_login) AND i.status='pending' AND i.expires_at>now() ORDER BY i.created_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	invitations := []api.Invitation{}
+	for rows.Next() {
+		var invitation api.Invitation
+		if err := rows.Scan(&invitation.ID, &invitation.ProjectID, &invitation.Project, &invitation.Inviter, &invitation.Role, &invitation.ExpiresAt); err != nil {
+			return nil, err
+		}
+		invitations = append(invitations, invitation)
+	}
+	return invitations, rows.Err()
+}
+
+func (store *Store) RespondInvitation(ctx context.Context, userID, invitationID string, accept bool) error {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var projectID, role string
+	err = tx.QueryRow(ctx, `SELECT i.project_id,i.role FROM project_invitations i JOIN users u ON u.id=$1 WHERE i.id=$2 AND lower(i.invitee_login)=lower(u.github_login) AND i.status='pending' AND i.expires_at>now() FOR UPDATE`, userID, invitationID).Scan(&projectID, &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	status := "declined"
+	if accept {
+		status = "accepted"
+		if _, err = tx.Exec(ctx, `INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,$3) ON CONFLICT(project_id,user_id) DO NOTHING`, projectID, userID, role); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(ctx, `UPDATE project_invitations SET status=$1,responded_at=now() WHERE id=$2`, status, invitationID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func memberRole(ctx context.Context, tx pgx.Tx, userID, projectID string) (string, error) {
+	var role string
+	err := tx.QueryRow(ctx, `SELECT role FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return role, err
+}
+
+func validShareRole(role string) bool { return role == "admin" || role == "member" || role == "viewer" }
 
 func SortedKeys(values map[string]string) []string {
 	keys := make([]string, 0, len(values))

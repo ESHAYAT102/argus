@@ -52,6 +52,13 @@ argus status                       Show local/remote synchronization status
 argus diff <environment>           Compare variable names without showing values
 argus delete <variable>            Delete a variable locally and remotely
 argus project link <project> [env] Link this directory to an existing project
+argus project share <project> <user> Invite a GitHub user
+argus project members <project>      List project members and roles
+argus project role <project> <user> <role> Change a member's role
+argus project unshare <project> <user> Remove project access
+argus invites                       List pending invitations
+argus invites accept <id>           Accept an invitation
+argus invites decline <id>          Decline an invitation
 argus list                         List projects and environments
 argus history                      Show activity
 argus remove <environment>         Remove an environment
@@ -65,6 +72,26 @@ argus destroy <project>            Destroy a project by name
 `argus status` compares `.env` with the active environment. `argus diff` shows only variable names marked as local-only, changed, or remote-only; secret values are never printed. These comparisons do not create fetch entries in project history.
 
 `argus delete` requires confirmation and removes the variable remotely before updating `.env`. `argus project link` stores the association in the user-wide registry below, never inside the project. When a project has multiple environments and none is supplied, Argus presents an environment picker.
+
+## Sharing projects
+
+Project owners and admins can invite collaborators by GitHub username. Invitations expire after seven days and do not grant access until the recipient explicitly accepts:
+
+```bash
+argus project share portfolio octocat
+argus project share portfolio octocat --role viewer
+argus invites
+argus invites accept <invitation-id>
+```
+
+If `--role` is omitted, Argus presents a role picker. Roles are enforced by the API:
+
+- `viewer` can list, pull, inspect differences, and view history.
+- `member` can also push and change environments and variables.
+- `admin` can also invite, remove, and change the roles of members and viewers.
+- `owner` has complete control, including admin management and project destruction. Ownership cannot be granted, removed, or demoted through sharing commands.
+
+Manage existing access with `argus project members`, `argus project role`, and `argus project unshare`. A recipient can link an accepted project to a directory with `argus project link`.
 
 ## Safe pulls
 
@@ -133,6 +160,8 @@ The API applies each embedded migration transactionally, records it in `schema_m
 - GitHub App Device Flow creates or updates the user and returns a 30-day Argus session.
 - Only SHA-256 hashes of Argus session tokens are stored.
 - Project access is checked through project membership on every operation.
+- Invitations are matched case-insensitively to the authenticated GitHub username, expire after seven days, and require explicit acceptance.
+- Viewer, member, admin, and owner permissions are enforced by the API for every protected mutation.
 - Variable values are encrypted before insertion using unique AES-GCM nonces.
 - Push makes the remote environment an exact mirror of the local `.env`; remote-only keys are removed transactionally and recorded in activity history.
 - Activity records variable additions and changes without recording values.

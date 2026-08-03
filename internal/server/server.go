@@ -39,6 +39,13 @@ func New(database *pgxpool.Pool, data *store.Store, github *githubauth.Client) h
 	mux.Handle("POST /v1/projects", server.auth(http.HandlerFunc(server.initProject)))
 	mux.Handle("GET /v1/projects", server.auth(http.HandlerFunc(server.listProjects)))
 	mux.Handle("DELETE /v1/projects/{project}", server.auth(http.HandlerFunc(server.destroyProject)))
+	mux.Handle("POST /v1/projects/{project}/invitations", server.auth(http.HandlerFunc(server.inviteMember)))
+	mux.Handle("GET /v1/projects/{project}/members", server.auth(http.HandlerFunc(server.members)))
+	mux.Handle("PATCH /v1/projects/{project}/members/{username}", server.auth(http.HandlerFunc(server.updateMemberRole)))
+	mux.Handle("DELETE /v1/projects/{project}/members/{username}", server.auth(http.HandlerFunc(server.removeMember)))
+	mux.Handle("GET /v1/invitations", server.auth(http.HandlerFunc(server.invitations)))
+	mux.Handle("POST /v1/invitations/{invitation}/accept", server.auth(http.HandlerFunc(server.acceptInvitation)))
+	mux.Handle("POST /v1/invitations/{invitation}/decline", server.auth(http.HandlerFunc(server.declineInvitation)))
 	mux.Handle("GET /v1/projects/{project}/environments/{environment}", server.auth(http.HandlerFunc(server.environmentExists)))
 	mux.Handle("PUT /v1/projects/{project}/environments/{environment}/push", server.auth(http.HandlerFunc(server.push)))
 	mux.Handle("GET /v1/projects/{project}/environments/{environment}/variables", server.auth(http.HandlerFunc(server.getVariables)))
@@ -252,6 +259,103 @@ func (server *Server) destroyProject(writer http.ResponseWriter, request *http.R
 	writer.WriteHeader(http.StatusNoContent)
 }
 
+func (server *Server) inviteMember(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Username string `json:"username"`
+		Role     string `json:"role"`
+	}
+	if err := decode(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	input.Username = strings.TrimSpace(strings.TrimPrefix(input.Username, "@"))
+	if !validGitHubUsername(input.Username) || !validRole(input.Role) {
+		writeError(writer, http.StatusBadRequest, "a GitHub username and valid role are required")
+		return
+	}
+	invitation, err := server.store.Invite(request.Context(), userID(request), request.PathValue("project"), input.Username, input.Role)
+	if err != nil {
+		problem(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, invitation)
+}
+
+func (server *Server) members(writer http.ResponseWriter, request *http.Request) {
+	members, err := server.store.Members(request.Context(), userID(request), request.PathValue("project"))
+	if err != nil {
+		problem(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"members": members})
+}
+
+func (server *Server) updateMemberRole(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Role string `json:"role"`
+	}
+	if err := decode(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !validRole(input.Role) {
+		writeError(writer, http.StatusBadRequest, "role must be admin, member, or viewer")
+		return
+	}
+	if err := server.store.UpdateMemberRole(request.Context(), userID(request), request.PathValue("project"), request.PathValue("username"), input.Role); err != nil {
+		problem(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) removeMember(writer http.ResponseWriter, request *http.Request) {
+	if err := server.store.RemoveMember(request.Context(), userID(request), request.PathValue("project"), request.PathValue("username")); err != nil {
+		problem(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) invitations(writer http.ResponseWriter, request *http.Request) {
+	invitations, err := server.store.Invitations(request.Context(), userID(request))
+	if err != nil {
+		problem(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"invitations": invitations})
+}
+
+func (server *Server) acceptInvitation(writer http.ResponseWriter, request *http.Request) {
+	if err := server.store.RespondInvitation(request.Context(), userID(request), request.PathValue("invitation"), true); err != nil {
+		problem(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) declineInvitation(writer http.ResponseWriter, request *http.Request) {
+	if err := server.store.RespondInvitation(request.Context(), userID(request), request.PathValue("invitation"), false); err != nil {
+		problem(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func validRole(role string) bool { return role == "admin" || role == "member" || role == "viewer" }
+
+func validGitHubUsername(username string) bool {
+	if len(username) == 0 || len(username) > 39 || username[0] == '-' || username[len(username)-1] == '-' || strings.Contains(username, "--") {
+		return false
+	}
+	for _, character := range username {
+		if character != '-' && (character < '0' || character > '9') && (character < 'A' || character > 'Z') && (character < 'a' || character > 'z') {
+			return false
+		}
+	}
+	return true
+}
+
 func (server *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		token := bearer(request)
@@ -320,7 +424,19 @@ func problem(writer http.ResponseWriter, err error) {
 		writeError(writer, http.StatusNotFound, "resource not found")
 		return
 	}
+	if errors.Is(err, store.ErrForbidden) {
+		writeError(writer, http.StatusForbidden, "you do not have permission to perform this action")
+		return
+	}
+	if errors.Is(err, store.ErrConflict) {
+		writeError(writer, http.StatusConflict, "that user is already a member or has a pending invitation")
+		return
+	}
 	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" && postgresError.ConstraintName == "project_invitations_pending_idx" {
+		writeError(writer, http.StatusConflict, "that user already has a pending invitation")
+		return
+	}
 	if errors.As(err, &postgresError) && postgresError.Code == "23505" {
 		writeError(writer, http.StatusConflict, "a project or environment with that name already exists")
 		return

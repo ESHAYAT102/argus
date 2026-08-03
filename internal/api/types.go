@@ -32,6 +32,20 @@ type User struct {
 	Username string `json:"username"`
 }
 
+type Member struct {
+	Username string `json:"username"`
+	Role     string `json:"role"`
+}
+
+type Invitation struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Project   string    `json:"project"`
+	Inviter   string    `json:"inviter"`
+	Role      string    `json:"role"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 type InitProjectRequest struct {
 	Name        string            `json:"name"`
 	Repository  string            `json:"repository,omitempty"`
@@ -54,4 +68,11 @@ type Client interface {
 	History(ctx context.Context, projectID string) ([]Activity, error)
 	RemoveEnvironment(ctx context.Context, projectID, environment string) error
 	DestroyProject(ctx context.Context, projectID string) error
+	ShareProject(ctx context.Context, projectID, username, role string) (Invitation, error)
+	Members(ctx context.Context, projectID string) ([]Member, error)
+	UpdateMemberRole(ctx context.Context, projectID, username, role string) error
+	RemoveMember(ctx context.Context, projectID, username string) error
+	Invitations(ctx context.Context) ([]Invitation, error)
+	AcceptInvitation(ctx context.Context, invitationID string) error
+	DeclineInvitation(ctx context.Context, invitationID string) error
 }

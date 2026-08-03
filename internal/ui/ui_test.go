@@ -31,6 +31,34 @@ func TestActivityLogEmptyState(t *testing.T) {
 	}
 }
 
+func TestMembersTable(t *testing.T) {
+	var output bytes.Buffer
+	MembersTable(&output, []api.Member{{Username: "octocat", Role: "member"}})
+	for _, want := range []string{"Member", "Role", "@octocat", "member"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("output does not contain %q: %s", want, output.String())
+		}
+	}
+}
+
+func TestInvitationsEmptyState(t *testing.T) {
+	var output bytes.Buffer
+	InvitationsTable(&output, nil)
+	if output.String() != "You don't have any pending invitations.\n" {
+		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestInvitationsTable(t *testing.T) {
+	var output bytes.Buffer
+	InvitationsTable(&output, []api.Invitation{{ID: "invite-id", Project: "portfolio", Inviter: "owner", Role: "viewer", ExpiresAt: time.Date(2026, 8, 11, 0, 0, 0, 0, time.Local)}})
+	for _, want := range []string{"invite-id", "portfolio", "@owner", "viewer", "Aug 11"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("output does not contain %q: %s", want, output.String())
+		}
+	}
+}
+
 func TestProjectsTable(t *testing.T) {
 	var output bytes.Buffer
 	ProjectsTable(&output, []struct{ Name, Environments string }{

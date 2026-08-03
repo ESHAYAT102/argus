@@ -45,6 +45,22 @@ type pullClient struct {
 	environments map[string]map[string]string
 }
 
+type sharingClient struct {
+	api.Client
+	projects []api.Project
+	shared   api.Invitation
+	username string
+	role     string
+}
+
+func (client *sharingClient) List(context.Context) ([]api.Project, error) {
+	return client.projects, nil
+}
+func (client *sharingClient) ShareProject(_ context.Context, _ string, username, role string) (api.Invitation, error) {
+	client.username, client.role = username, role
+	return client.shared, nil
+}
+
 func (client *pullClient) Get(_ context.Context, _, environment string) (map[string]string, error) {
 	return client.environments[environment], nil
 }
@@ -153,6 +169,28 @@ func TestProjectLinkSavesGlobalAssociation(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(directory, ".argus.toml")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("unexpected project-local config: %v", err)
+	}
+}
+
+func TestProjectShareWithExplicitRole(t *testing.T) {
+	client := &sharingClient{
+		projects: []api.Project{{ID: "project-id", Name: "portfolio"}},
+		shared:   api.Invitation{Role: "viewer", ExpiresAt: time.Date(2026, 8, 11, 0, 0, 0, 0, time.Local)},
+	}
+	var output bytes.Buffer
+	app := &application{client: client, out: &output}
+	command := app.projectShareCommand()
+	if err := command.Flags().Set("role", "viewer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.RunE(command, []string{"portfolio", "@octocat"}); err != nil {
+		t.Fatal(err)
+	}
+	if client.username != "octocat" || client.role != "viewer" {
+		t.Fatalf("username=%q role=%q", client.username, client.role)
+	}
+	if !strings.Contains(output.String(), "Invited @octocat to portfolio as viewer") {
+		t.Fatalf("output = %q", output.String())
 	}
 }
 
@@ -359,7 +397,7 @@ func TestPullBackupBehavior(t *testing.T) {
 
 func TestWorkflowCommandsAreRegistered(t *testing.T) {
 	root := (&application{}).rootCommand()
-	for _, path := range [][]string{{"status"}, {"diff"}, {"delete"}, {"project", "link"}} {
+	for _, path := range [][]string{{"status"}, {"diff"}, {"delete"}, {"project", "link"}, {"project", "share"}, {"project", "members"}, {"project", "role"}, {"project", "unshare"}, {"invites"}, {"invites", "accept"}, {"invites", "decline"}} {
 		command, _, err := root.Find(path)
 		if err != nil || command.Name() != path[len(path)-1] {
 			t.Fatalf("command %v was not registered: command=%v err=%v", path, command, err)

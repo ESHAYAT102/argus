@@ -99,3 +99,49 @@ func TestDeleteVariableRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestProjectAccessRequests(t *testing.T) {
+	tests := []struct {
+		name, method, path string
+		call               func(*HTTPClient) error
+	}{
+		{name: "share", method: http.MethodPost, path: "/v1/projects/project/invitations", call: func(client *HTTPClient) error {
+			_, err := client.ShareProject(context.Background(), "project", "octocat", "member")
+			return err
+		}},
+		{name: "members", method: http.MethodGet, path: "/v1/projects/project/members", call: func(client *HTTPClient) error { _, err := client.Members(context.Background(), "project"); return err }},
+		{name: "role", method: http.MethodPatch, path: "/v1/projects/project/members/octocat", call: func(client *HTTPClient) error {
+			return client.UpdateMemberRole(context.Background(), "project", "octocat", "viewer")
+		}},
+		{name: "unshare", method: http.MethodDelete, path: "/v1/projects/project/members/octocat", call: func(client *HTTPClient) error { return client.RemoveMember(context.Background(), "project", "octocat") }},
+		{name: "invites", method: http.MethodGet, path: "/v1/invitations", call: func(client *HTTPClient) error { _, err := client.Invitations(context.Background()); return err }},
+		{name: "accept", method: http.MethodPost, path: "/v1/invitations/invite/accept", call: func(client *HTTPClient) error { return client.AcceptInvitation(context.Background(), "invite") }},
+		{name: "decline", method: http.MethodPost, path: "/v1/invitations/invite/decline", call: func(client *HTTPClient) error { return client.DeclineInvitation(context.Background(), "invite") }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.Method != test.method || request.URL.Path != test.path {
+					t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+				}
+				if test.name == "share" {
+					_, _ = io.WriteString(writer, `{"id":"invite","role":"member","expires_at":"2026-08-11T00:00:00Z"}`)
+					return
+				}
+				if test.name == "members" {
+					_, _ = io.WriteString(writer, `{"members":[]}`)
+					return
+				}
+				if test.name == "invites" {
+					_, _ = io.WriteString(writer, `{"invitations":[]}`)
+					return
+				}
+				writer.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			if err := test.call(NewHTTPClient(server.URL, testTokenStore{})); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

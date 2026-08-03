@@ -125,3 +125,44 @@ func ProjectsTable(writer io.Writer, projects []struct{ Name, Environments strin
 		BorderForeground(muted)
 	fmt.Fprintln(writer, box.Render(model.View()))
 }
+
+func MembersTable(writer io.Writer, members []api.Member) {
+	if len(members) == 0 {
+		fmt.Fprintln(writer, "This project has no members.")
+		return
+	}
+	rows := make([]table.Row, 0, len(members))
+	for _, member := range members {
+		rows = append(rows, table.Row{"@" + member.Username, member.Role})
+	}
+	renderSimpleTable(writer, []table.Column{{Title: "Member", Width: maxColumnWidth("Member", rows, 0)}, {Title: "Role", Width: maxColumnWidth("Role", rows, 1)}}, rows)
+}
+
+func InvitationsTable(writer io.Writer, invitations []api.Invitation) {
+	if len(invitations) == 0 {
+		fmt.Fprintln(writer, "You don't have any pending invitations.")
+		return
+	}
+	rows := make([]table.Row, 0, len(invitations))
+	for _, invitation := range invitations {
+		rows = append(rows, table.Row{invitation.ID, invitation.Project, "@" + invitation.Inviter, invitation.Role, invitation.ExpiresAt.Local().Format("Jan 2")})
+	}
+	renderSimpleTable(writer, []table.Column{{Title: "ID", Width: maxColumnWidth("ID", rows, 0)}, {Title: "Project", Width: maxColumnWidth("Project", rows, 1)}, {Title: "From", Width: maxColumnWidth("From", rows, 2)}, {Title: "Role", Width: maxColumnWidth("Role", rows, 3)}, {Title: "Expires", Width: maxColumnWidth("Expires", rows, 4)}}, rows)
+}
+
+func maxColumnWidth(title string, rows []table.Row, index int) int {
+	width := lipgloss.Width(title)
+	for _, row := range rows {
+		width = max(width, lipgloss.Width(row[index]))
+	}
+	return width + 2
+}
+
+func renderSimpleTable(writer io.Writer, columns []table.Column, rows []table.Row) {
+	styles := table.DefaultStyles()
+	styles.Header = styles.Header.BorderStyle(lipgloss.NormalBorder()).BorderForeground(muted).BorderBottom(true).Bold(false).Foreground(purple)
+	styles.Selected = lipgloss.NewStyle()
+	model := table.New(table.WithColumns(columns), table.WithRows(rows), table.WithFocused(false), table.WithHeight(len(rows)+1), table.WithStyles(styles))
+	box := lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(muted)
+	fmt.Fprintln(writer, box.Render(model.View()))
+}
