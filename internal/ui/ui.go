@@ -29,18 +29,16 @@ func ProjectsTable(writer io.Writer, projects []struct{ Name, Environments strin
 	}
 
 	columns := []table.Column{
-		{Title: "Projects", Width: projectWidth},
-		{Title: "Environments", Width: environmentWidth},
+		{Title: "Projects", Width: projectWidth + 2},
+		{Title: "Environments", Width: environmentWidth + 2},
 	}
 	styles := table.DefaultStyles()
 	styles.Header = styles.Header.
-		PaddingRight(0).
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(muted).
 		BorderBottom(true).
 		Bold(false).
 		Foreground(purple)
-	styles.Cell = styles.Cell.PaddingRight(0)
 	// This table is a snapshot rather than an interactive picker, so no row
 	// should appear selected.
 	styles.Selected = styles.Cell
