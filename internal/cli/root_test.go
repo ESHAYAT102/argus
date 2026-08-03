@@ -146,6 +146,15 @@ func TestPushCommandReplacesSync(t *testing.T) {
 	}
 }
 
+func TestRootDoesNotIncludeCompletionCommand(t *testing.T) {
+	root := (&application{}).rootCommand()
+	for _, command := range root.Commands() {
+		if command.Name() == "completion" {
+			t.Fatal("completion command should not be registered")
+		}
+	}
+}
+
 func TestAuthDoesNotAuthenticateTwice(t *testing.T) {
 	var output bytes.Buffer
 	client := &authenticationClient{user: api.User{Username: "octocat"}}

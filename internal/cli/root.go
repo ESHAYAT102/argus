@@ -66,6 +66,7 @@ func (app *application) rootCommand() *cobra.Command {
 	root.SetIn(app.in)
 	root.SetOut(app.out)
 	root.SetErr(app.errOut)
+	root.CompletionOptions.DisableDefaultCmd = true
 	root.AddCommand(
 		app.authCommand(), app.whoamiCommand(), app.logoutCommand(), app.initCommand(),
 		app.pushCommand(), app.getCommand(), app.setCommand(),
