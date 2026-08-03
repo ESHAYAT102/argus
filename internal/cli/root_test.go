@@ -93,6 +93,21 @@ func TestDestroyTargetDoesNotUseCurrentDirectory(t *testing.T) {
 	}
 }
 
+func TestListShowsEmptyState(t *testing.T) {
+	var output bytes.Buffer
+	app := &application{client: &projectListClient{}, out: &output}
+	command := app.listCommand()
+
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "No projects found. Run `argus init` in a repository to create one.\n"
+	if output.String() != want {
+		t.Fatalf("output = %q, want %q", output.String(), want)
+	}
+}
+
 func TestPrintErrorUsesReadablePrefix(t *testing.T) {
 	var output bytes.Buffer
 	app := &application{errOut: &output}

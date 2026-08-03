@@ -334,6 +334,10 @@ func (app *application) listCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if len(projects) == 0 {
+			fmt.Fprintln(app.out, "No projects found. Run `argus init` in a repository to create one.")
+			return nil
+		}
 		rows := make([]struct{ Name, Environments string }, 0, len(projects))
 		for _, item := range projects {
 			names := make([]string, 0, len(item.Environments))
