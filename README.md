@@ -134,7 +134,7 @@ The API applies each embedded migration transactionally, records it in `schema_m
 - Only SHA-256 hashes of Argus session tokens are stored.
 - Project access is checked through project membership on every operation.
 - Variable values are encrypted before insertion using unique AES-GCM nonces.
-- Push is non-destructive: keys missing from the local `.env` are retained remotely.
+- Push makes the remote environment an exact mirror of the local `.env`; remote-only keys are removed transactionally and recorded in activity history.
 - Activity records variable additions and changes without recording values.
 - Destroying a project is restricted to its owner and cascades through its environments and activity.
 

@@ -140,6 +140,35 @@ func (store *Store) Push(ctx context.Context, userID, projectID, environment str
 			return api.Environment{}, err
 		}
 	}
+	rows, err := tx.Query(ctx, `SELECT name FROM variables WHERE environment_id=$1`, environmentID)
+	if err != nil {
+		return api.Environment{}, err
+	}
+	remoteNames := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return api.Environment{}, err
+		}
+		remoteNames = append(remoteNames, name)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return api.Environment{}, err
+	}
+	rows.Close()
+	for _, name := range remoteNames {
+		if _, keep := values[name]; keep {
+			continue
+		}
+		if _, err = tx.Exec(ctx, `DELETE FROM variables WHERE environment_id=$1 AND name=$2`, environmentID, name); err != nil {
+			return api.Environment{}, err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action,variable_name) VALUES($1,$2,$3,'variable.removed',$4)`, projectID, environmentID, userID, name); err != nil {
+			return api.Environment{}, err
+		}
+	}
 	for name, value := range values {
 		existed, putErr := store.putVariable(ctx, tx, userID, environmentID, name, value)
 		if putErr != nil {

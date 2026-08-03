@@ -67,7 +67,17 @@ func TestStoreLifecycle(t *testing.T) {
 	if err := data.Set(ctx, userID, project.ID, "prod", "THIRD", "three"); err != nil {
 		t.Fatal(err)
 	}
-	values, err := data.Get(ctx, userID, project.ID, "prod", true)
+	if _, err := data.Push(ctx, userID, project.ID, "prod", map[string]string{"SECOND": "two"}); err != nil {
+		t.Fatal(err)
+	}
+	values, err := data.Get(ctx, userID, project.ID, "prod", false)
+	if err != nil || values["THIRD"] != "" || values["SECOND"] != "two" {
+		t.Fatalf("values after exact push=%#v err=%v", values, err)
+	}
+	if err := data.Set(ctx, userID, project.ID, "prod", "THIRD", "three"); err != nil {
+		t.Fatal(err)
+	}
+	values, err = data.Get(ctx, userID, project.ID, "prod", true)
 	if err != nil {
 		t.Fatal(err)
 	}
