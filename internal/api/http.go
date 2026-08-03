@@ -100,9 +100,9 @@ func (client *HTTPClient) InitProject(ctx context.Context, request InitProjectRe
 	return response.Project, response.Environment, err
 }
 
-func (client *HTTPClient) Sync(ctx context.Context, projectID, environment string, variables map[string]string) (Environment, error) {
+func (client *HTTPClient) Push(ctx context.Context, projectID, environment string, variables map[string]string) (Environment, error) {
 	var result Environment
-	path := fmt.Sprintf("/v1/projects/%s/environments/%s/sync", url.PathEscape(projectID), url.PathEscape(environment))
+	path := fmt.Sprintf("/v1/projects/%s/environments/%s/push", url.PathEscape(projectID), url.PathEscape(environment))
 	err := client.request(ctx, http.MethodPut, path, map[string]any{"variables": variables}, &result, true)
 	return result, err
 }

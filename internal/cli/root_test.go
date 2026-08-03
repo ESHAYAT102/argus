@@ -44,3 +44,19 @@ func TestPrintErrorUsesReadablePrefix(t *testing.T) {
 		t.Fatalf("unexpected output: %q", got)
 	}
 }
+
+func TestPushCommandReplacesSync(t *testing.T) {
+	root := (&application{}).rootCommand()
+	foundPush := false
+	for _, command := range root.Commands() {
+		switch command.Name() {
+		case "push":
+			foundPush = true
+		case "sync":
+			t.Fatal("sync command should no longer be registered")
+		}
+	}
+	if !foundPush {
+		t.Fatal("push command is not registered")
+	}
+}

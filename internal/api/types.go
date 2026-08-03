@@ -38,7 +38,7 @@ type Client interface {
 	Authenticate(ctx context.Context) error
 	Logout(ctx context.Context) error
 	InitProject(ctx context.Context, request InitProjectRequest) (Project, Environment, error)
-	Sync(ctx context.Context, projectID, environment string, variables map[string]string) (Environment, error)
+	Push(ctx context.Context, projectID, environment string, variables map[string]string) (Environment, error)
 	EnvironmentExists(ctx context.Context, projectID, environment string) (bool, error)
 	Get(ctx context.Context, projectID, environment string) (map[string]string, error)
 	Set(ctx context.Context, projectID, environment, name, value string) error

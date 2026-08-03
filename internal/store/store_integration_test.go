@@ -26,7 +26,9 @@ func TestStoreLifecycle(t *testing.T) {
 	go func() { migrations <- database.Migrate(ctx, pool) }()
 	go func() { migrations <- database.Migrate(ctx, pool) }()
 	for range 2 {
-		if err := <-migrations; err != nil { t.Fatal(err) }
+		if err := <-migrations; err != nil {
+			t.Fatal(err)
+		}
 	}
 	cipher, err := secrets.New(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("i", 32))))
 	if err != nil {
@@ -55,7 +57,7 @@ func TestStoreLifecycle(t *testing.T) {
 	if err != nil || !exists {
 		t.Fatalf("exists=%v err=%v", exists, err)
 	}
-	if _, err := data.Sync(ctx, userID, project.ID, "prod", map[string]string{"SECOND": "two"}); err != nil {
+	if _, err := data.Push(ctx, userID, project.ID, "prod", map[string]string{"SECOND": "two"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := data.Set(ctx, userID, project.ID, "prod", "THIRD", "three"); err != nil {

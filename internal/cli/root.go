@@ -57,7 +57,7 @@ func (app *application) rootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		Example: `  argus auth
   argus init dev
-  argus sync prod
+  argus push prod
   argus get dev
   argus set DATABASE_URL`,
 	}
@@ -66,7 +66,7 @@ func (app *application) rootCommand() *cobra.Command {
 	root.SetErr(app.errOut)
 	root.AddCommand(
 		app.authCommand(), app.logoutCommand(), app.initCommand(),
-		app.syncCommand(), app.getCommand(), app.setCommand(),
+		app.pushCommand(), app.getCommand(), app.setCommand(),
 		app.listCommand(), app.historyCommand(), app.removeCommand(),
 		app.destroyCommand(),
 	)
@@ -189,8 +189,8 @@ func (app *application) initCommand() *cobra.Command {
 	}}
 }
 
-func (app *application) syncCommand() *cobra.Command {
-	return &cobra.Command{Use: "sync [environment]", Short: "Push the current .env", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
+func (app *application) pushCommand() *cobra.Command {
+	return &cobra.Command{Use: "push [environment]", Short: "Push the current .env to Argus", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
 		directory, metadata, err := app.projectContext(command.Context(), true)
 		if err != nil {
 			return err
@@ -219,18 +219,18 @@ func (app *application) syncCommand() *cobra.Command {
 				return err
 			}
 			if !confirmed {
-				fmt.Fprintln(app.out, "Sync cancelled.")
+				fmt.Fprintln(app.out, "Push cancelled.")
 				return nil
 			}
 		}
-		if _, err := app.client.Sync(command.Context(), metadata.ProjectID, environment, values); err != nil {
+		if _, err := app.client.Push(command.Context(), metadata.ProjectID, environment, values); err != nil {
 			return err
 		}
 		metadata.Environment = environment
 		if err := config.Save(directory, metadata); err != nil {
 			return err
 		}
-		fmt.Fprintf(app.out, "%s Synced %d variables to %s.\n", ui.Success.Render("✓"), len(values), environment)
+		fmt.Fprintf(app.out, "%s Pushed %d variables to %s.\n", ui.Success.Render("✓"), len(values), environment)
 		return nil
 	}}
 }
@@ -271,7 +271,7 @@ func (app *application) setCommand() *cobra.Command {
 			return err
 		}
 		if metadata.Environment == "" {
-			return errors.New("no active environment; run `argus get <environment>` or `argus sync <environment>` first")
+			return errors.New("no active environment; run `argus get <environment>` or `argus push <environment>` first")
 		}
 		value := ""
 		if len(args) == 2 {

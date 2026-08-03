@@ -39,7 +39,7 @@ func New(database *pgxpool.Pool, data *store.Store, github *githubauth.Client) h
 	mux.Handle("GET /v1/projects", server.auth(http.HandlerFunc(server.listProjects)))
 	mux.Handle("DELETE /v1/projects/{project}", server.auth(http.HandlerFunc(server.destroyProject)))
 	mux.Handle("GET /v1/projects/{project}/environments/{environment}", server.auth(http.HandlerFunc(server.environmentExists)))
-	mux.Handle("PUT /v1/projects/{project}/environments/{environment}/sync", server.auth(http.HandlerFunc(server.sync)))
+	mux.Handle("PUT /v1/projects/{project}/environments/{environment}/push", server.auth(http.HandlerFunc(server.push)))
 	mux.Handle("GET /v1/projects/{project}/environments/{environment}/variables", server.auth(http.HandlerFunc(server.getVariables)))
 	mux.Handle("PUT /v1/projects/{project}/environments/{environment}/variables/{variable}", server.auth(http.HandlerFunc(server.setVariable)))
 	mux.Handle("DELETE /v1/projects/{project}/environments/{environment}", server.auth(http.HandlerFunc(server.removeEnvironment)))
@@ -144,7 +144,7 @@ func (server *Server) environmentExists(writer http.ResponseWriter, request *htt
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (server *Server) sync(writer http.ResponseWriter, request *http.Request) {
+func (server *Server) push(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
 		Variables map[string]string `json:"variables"`
 	}
@@ -162,7 +162,7 @@ func (server *Server) sync(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
-	environment, err := server.store.Sync(request.Context(), userID(request), request.PathValue("project"), request.PathValue("environment"), input.Variables)
+	environment, err := server.store.Push(request.Context(), userID(request), request.PathValue("project"), request.PathValue("environment"), input.Variables)
 	if err != nil {
 		problem(writer, err)
 		return

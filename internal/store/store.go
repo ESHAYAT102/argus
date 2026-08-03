@@ -108,7 +108,7 @@ func (store *Store) EnvironmentExists(ctx context.Context, userID, projectID, na
 	return exists, err
 }
 
-func (store *Store) Sync(ctx context.Context, userID, projectID, environment string, values map[string]string) (api.Environment, error) {
+func (store *Store) Push(ctx context.Context, userID, projectID, environment string, values map[string]string) (api.Environment, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return api.Environment{}, err
@@ -145,7 +145,7 @@ func (store *Store) Sync(ctx context.Context, userID, projectID, environment str
 		}
 	}
 	metadata, _ := json.Marshal(map[string]any{"variables": len(values)})
-	if _, err = tx.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action,metadata) VALUES($1,$2,$3,'environment.synced',$4)`, projectID, environmentID, userID, metadata); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action,metadata) VALUES($1,$2,$3,'environment.pushed',$4)`, projectID, environmentID, userID, metadata); err != nil {
 		return api.Environment{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {

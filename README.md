@@ -44,7 +44,7 @@ irm https://raw.githubusercontent.com/ESHAYAT102/argus/main/scripts/uninstall.ps
 argus auth                         Sign in with GitHub
 argus logout                       Log out
 argus init [environment]           Create a project and push .env
-argus sync [environment]           Push .env
+argus push [environment]           Push .env
 argus get <environment>            Fetch into .env
 argus set <variable> [value]       Update one variable
 argus list                         List projects and environments
@@ -108,7 +108,7 @@ The API applies each embedded migration transactionally, records it in `schema_m
 - Only SHA-256 hashes of Argus session tokens are stored.
 - Project access is checked through project membership on every operation.
 - Variable values are encrypted before insertion using unique AES-GCM nonces.
-- Sync is non-destructive: keys missing from the local `.env` are retained remotely.
+- Push is non-destructive: keys missing from the local `.env` are retained remotely.
 - Activity records variable additions and changes without recording values.
 - Destroying a project is restricted to its owner and cascades through its environments and activity.
 
