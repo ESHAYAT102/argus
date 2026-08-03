@@ -1,0 +1,6 @@
+/bin/
+/.env
+/.env.*
+!/.env.example
+/.env.backup.*
+/.argus.toml
