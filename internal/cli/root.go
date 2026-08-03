@@ -335,7 +335,7 @@ func (app *application) listCommand() *cobra.Command {
 			return err
 		}
 		if len(projects) == 0 {
-			fmt.Fprintln(app.out, "No projects found in your Argus account.")
+			fmt.Fprintln(app.out, "You don't have any projects yet.")
 			return nil
 		}
 		rows := make([]struct{ Name, Environments string }, 0, len(projects))

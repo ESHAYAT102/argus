@@ -115,7 +115,7 @@ func TestListShowsEmptyState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "No projects found in your Argus account.\n"
+	want := "You don't have any projects yet.\n"
 	if output.String() != want {
 		t.Fatalf("output = %q, want %q", output.String(), want)
 	}
