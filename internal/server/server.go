@@ -43,6 +43,7 @@ func New(database *pgxpool.Pool, data *store.Store, github *githubauth.Client) h
 	mux.Handle("PUT /v1/projects/{project}/environments/{environment}/push", server.auth(http.HandlerFunc(server.push)))
 	mux.Handle("GET /v1/projects/{project}/environments/{environment}/variables", server.auth(http.HandlerFunc(server.getVariables)))
 	mux.Handle("PUT /v1/projects/{project}/environments/{environment}/variables/{variable}", server.auth(http.HandlerFunc(server.setVariable)))
+	mux.Handle("DELETE /v1/projects/{project}/environments/{environment}/variables/{variable}", server.auth(http.HandlerFunc(server.deleteVariable)))
 	mux.Handle("DELETE /v1/projects/{project}/environments/{environment}", server.auth(http.HandlerFunc(server.removeEnvironment)))
 	mux.Handle("GET /v1/activity", server.auth(http.HandlerFunc(server.history)))
 	return recoverer(securityHeaders(mux))
@@ -181,12 +182,26 @@ func (server *Server) push(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (server *Server) getVariables(writer http.ResponseWriter, request *http.Request) {
-	values, err := server.store.Get(request.Context(), userID(request), request.PathValue("project"), request.PathValue("environment"))
+	recordActivity := request.URL.Query().Get("record_activity") != "false"
+	values, err := server.store.Get(request.Context(), userID(request), request.PathValue("project"), request.PathValue("environment"), recordActivity)
 	if err != nil {
 		problem(writer, err)
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"variables": values})
+}
+
+func (server *Server) deleteVariable(writer http.ResponseWriter, request *http.Request) {
+	name := request.PathValue("variable")
+	if err := dotenv.ValidateName(name); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := server.store.DeleteVariable(request.Context(), userID(request), request.PathValue("project"), request.PathValue("environment"), name); err != nil {
+		problem(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (server *Server) setVariable(writer http.ResponseWriter, request *http.Request) {

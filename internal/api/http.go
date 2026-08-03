@@ -153,10 +153,21 @@ func (client *HTTPClient) EnvironmentExists(ctx context.Context, projectID, envi
 }
 
 func (client *HTTPClient) Get(ctx context.Context, projectID, environment string) (map[string]string, error) {
+	return client.variables(ctx, projectID, environment, true)
+}
+
+func (client *HTTPClient) Inspect(ctx context.Context, projectID, environment string) (map[string]string, error) {
+	return client.variables(ctx, projectID, environment, false)
+}
+
+func (client *HTTPClient) variables(ctx context.Context, projectID, environment string, recordActivity bool) (map[string]string, error) {
 	var response struct {
 		Variables map[string]string `json:"variables"`
 	}
 	path := fmt.Sprintf("/v1/projects/%s/environments/%s/variables", url.PathEscape(projectID), url.PathEscape(environment))
+	if !recordActivity {
+		path += "?record_activity=false"
+	}
 	err := client.request(ctx, http.MethodGet, path, nil, &response, true)
 	return response.Variables, err
 }
@@ -164,6 +175,11 @@ func (client *HTTPClient) Get(ctx context.Context, projectID, environment string
 func (client *HTTPClient) Set(ctx context.Context, projectID, environment, name, value string) error {
 	path := fmt.Sprintf("/v1/projects/%s/environments/%s/variables/%s", url.PathEscape(projectID), url.PathEscape(environment), url.PathEscape(name))
 	return client.request(ctx, http.MethodPut, path, map[string]string{"value": value}, nil, true)
+}
+
+func (client *HTTPClient) DeleteVariable(ctx context.Context, projectID, environment, name string) error {
+	path := fmt.Sprintf("/v1/projects/%s/environments/%s/variables/%s", url.PathEscape(projectID), url.PathEscape(environment), url.PathEscape(name))
+	return client.request(ctx, http.MethodDelete, path, nil, nil, true)
 }
 
 func (client *HTTPClient) List(ctx context.Context) ([]Project, error) {

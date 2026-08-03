@@ -163,7 +163,7 @@ func (store *Store) Push(ctx context.Context, userID, projectID, environment str
 	return api.Environment{ID: environmentID, ProjectID: projectID, Name: environment}, nil
 }
 
-func (store *Store) Get(ctx context.Context, userID, projectID, environment string) (map[string]string, error) {
+func (store *Store) Get(ctx context.Context, userID, projectID, environment string, recordActivity bool) (map[string]string, error) {
 	rows, err := store.db.Query(ctx, `SELECT e.id,v.name,v.encrypted_value,v.nonce FROM environments e JOIN project_members m ON m.project_id=e.project_id LEFT JOIN variables v ON v.environment_id=e.id WHERE e.project_id=$1 AND e.name=$2 AND m.user_id=$3`, projectID, environment, userID)
 	if err != nil {
 		return nil, err
@@ -194,7 +194,9 @@ func (store *Store) Get(ctx context.Context, userID, projectID, environment stri
 	if !found {
 		return nil, ErrNotFound
 	}
-	_, err = store.db.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action) SELECT $1,id,$3,'environment.fetched' FROM environments WHERE project_id=$1 AND name=$2`, projectID, environment, userID)
+	if recordActivity {
+		_, err = store.db.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action) SELECT $1,id,$3,'environment.fetched' FROM environments WHERE project_id=$1 AND name=$2`, projectID, environment, userID)
+	}
 	return values, err
 }
 
@@ -222,6 +224,33 @@ func (store *Store) Set(ctx context.Context, userID, projectID, environment, nam
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action,variable_name) VALUES($1,$2,$3,$4,$5)`, projectID, environmentID, userID, action, name)
 	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (store *Store) DeleteVariable(ctx context.Context, userID, projectID, environment, name string) error {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var environmentID string
+	err = tx.QueryRow(ctx, `SELECT e.id FROM environments e JOIN project_members m ON m.project_id=e.project_id WHERE e.project_id=$1 AND e.name=$2 AND m.user_id=$3`, projectID, environment, userID).Scan(&environmentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	result, err := tx.Exec(ctx, `DELETE FROM variables WHERE environment_id=$1 AND name=$2`, environmentID, name)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action,variable_name) VALUES($1,$2,$3,'variable.removed',$4)`, projectID, environmentID, userID, name); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

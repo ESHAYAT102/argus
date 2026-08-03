@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/argus-env/argus/internal/api"
 	"github.com/argus-env/argus/internal/config"
+	"github.com/argus-env/argus/internal/dotenv"
 	"github.com/argus-env/argus/internal/project"
 )
 
@@ -23,6 +26,26 @@ type authenticationClient struct {
 type projectListClient struct {
 	api.Client
 	projects []api.Project
+}
+
+type comparisonClient struct {
+	api.Client
+	remote map[string]string
+}
+
+type deletionClient struct {
+	api.Client
+	err    error
+	called bool
+}
+
+func (client *deletionClient) DeleteVariable(context.Context, string, string, string) error {
+	client.called = true
+	return client.err
+}
+
+func (client *comparisonClient) Inspect(context.Context, string, string) (map[string]string, error) {
+	return client.remote, nil
 }
 
 func (client *projectListClient) List(context.Context) ([]api.Project, error) {
@@ -57,6 +80,112 @@ func TestGetMissingEnvironmentError(t *testing.T) {
 	want := "missing environment name\n\nUsage:\n  argus get <environment>\n\nExamples:\n  argus get dev\n  argus get prod"
 	if err.Error() != want {
 		t.Fatalf("error:\n%s\n\nwant:\n%s", err, want)
+	}
+}
+
+func TestCompareVariablesDoesNotExposeValues(t *testing.T) {
+	difference := compareVariables(
+		map[string]string{"LOCAL": "local-secret", "CHANGED": "old-secret", "SAME": "same"},
+		map[string]string{"REMOTE": "remote-secret", "CHANGED": "new-secret", "SAME": "same"},
+	)
+	if strings.Join(difference.LocalOnly, ",") != "LOCAL" || strings.Join(difference.Changed, ",") != "CHANGED" || strings.Join(difference.RemoteOnly, ",") != "REMOTE" {
+		t.Fatalf("difference = %#v", difference)
+	}
+}
+
+func TestDiffPrintsNamesWithoutValues(t *testing.T) {
+	t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("CHANGED=local-secret\nLOCAL=only-here\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(directory, config.Project{ProjectID: "project-id", ProjectName: "demo", Environment: "dev"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	app := &application{client: &comparisonClient{remote: map[string]string{"CHANGED": "remote-secret", "REMOTE": "only-there"}}, out: &output, cwd: func() (string, error) { return directory, nil }}
+	command := app.diffCommand()
+	if err := command.RunE(command, []string{"dev"}); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	for _, name := range []string{"CHANGED", "LOCAL", "REMOTE"} {
+		if !strings.Contains(got, name) {
+			t.Fatalf("output does not contain %q: %s", name, got)
+		}
+	}
+	for _, secret := range []string{"local-secret", "remote-secret", "only-here", "only-there"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("output leaked %q: %s", secret, got)
+		}
+	}
+}
+
+func TestProjectLinkSavesGlobalAssociation(t *testing.T) {
+	t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+	directory := t.TempDir()
+	client := &projectListClient{projects: []api.Project{{ID: "project-id", Name: "portfolio", Environments: []api.Environment{{Name: "prod"}}}}}
+	app := &application{client: client, out: &bytes.Buffer{}, cwd: func() (string, error) { return directory, nil }, discoverProject: func(string) (project.Discovery, error) { return project.Discovery{}, errors.New("not a repository") }}
+	command := app.projectLinkCommand()
+	if err := command.RunE(command, []string{"Portfolio"}); err != nil {
+		t.Fatal(err)
+	}
+	linked, err := config.Load(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linked.ProjectID != "project-id" || linked.Environment != "prod" {
+		t.Fatalf("linked = %#v", linked)
+	}
+	if _, err := os.Stat(filepath.Join(directory, ".argus.toml")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unexpected project-local config: %v", err)
+	}
+}
+
+func TestDeleteUpdatesRemoteBeforeLocalFile(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		remoteErr  error
+		shouldKeep bool
+	}{
+		{name: "success", shouldKeep: false},
+		{name: "remote failure", remoteErr: errors.New("offline"), shouldKeep: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+			directory := t.TempDir()
+			if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("DELETE_ME=secret\nKEEP=yes\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := config.Save(directory, config.Project{ProjectID: "project-id", ProjectName: "demo", Environment: "prod"}); err != nil {
+				t.Fatal(err)
+			}
+			client := &deletionClient{err: test.remoteErr}
+			app := &application{
+				client: client,
+				out:    &bytes.Buffer{},
+				cwd:    func() (string, error) { return directory, nil },
+				confirmPrompt: func(string) (bool, error) {
+					return true, nil
+				},
+			}
+			command := app.deleteCommand()
+			err := command.RunE(command, []string{"DELETE_ME"})
+			if !client.called {
+				t.Fatal("remote delete was not called")
+			}
+			if test.remoteErr != nil && !errors.Is(err, test.remoteErr) {
+				t.Fatalf("error = %v", err)
+			}
+			values, readErr := dotenv.Read(directory)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			_, kept := values["DELETE_ME"]
+			if kept != test.shouldKeep || values["KEEP"] != "yes" {
+				t.Fatalf("values = %#v", values)
+			}
+		})
 	}
 }
 
@@ -143,6 +272,36 @@ func TestPushCommandReplacesSync(t *testing.T) {
 	}
 	if !foundPush {
 		t.Fatal("push command is not registered")
+	}
+}
+
+func TestWorkflowCommandsAreRegistered(t *testing.T) {
+	root := (&application{}).rootCommand()
+	for _, path := range [][]string{{"status"}, {"diff"}, {"delete"}, {"project", "link"}} {
+		command, _, err := root.Find(path)
+		if err != nil || command.Name() != path[len(path)-1] {
+			t.Fatalf("command %v was not registered: command=%v err=%v", path, command, err)
+		}
+	}
+}
+
+func TestStatusReportsMatchingEnvironment(t *testing.T) {
+	t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("PORT=3000\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(directory, config.Project{ProjectID: "project-id", ProjectName: "demo", Environment: "dev"}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	app := &application{client: &comparisonClient{remote: map[string]string{"PORT": "3000"}}, out: &output, cwd: func() (string, error) { return directory, nil }}
+	command := app.statusCommand()
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); !strings.Contains(got, "Project: demo") || !strings.Contains(got, "Environment: dev") || !strings.Contains(got, "in sync") {
+		t.Fatalf("output = %q", got)
 	}
 }
 

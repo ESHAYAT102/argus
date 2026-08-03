@@ -31,6 +31,7 @@ type application struct {
 	cwd             func() (string, error)
 	now             func() time.Time
 	discoverProject func(string) (project.Discovery, error)
+	confirmPrompt   func(string) (bool, error)
 }
 
 func Execute() error {
@@ -70,6 +71,7 @@ func (app *application) rootCommand() *cobra.Command {
 	root.AddCommand(
 		app.authCommand(), app.whoamiCommand(), app.logoutCommand(), app.initCommand(),
 		app.pushCommand(), app.getCommand(), app.setCommand(),
+		app.statusCommand(), app.diffCommand(), app.deleteCommand(), app.projectCommand(),
 		app.listCommand(), app.historyCommand(), app.removeCommand(),
 		app.destroyCommand(),
 	)
@@ -110,6 +112,26 @@ func requireProject(command *cobra.Command, args []string) error {
 	}
 	if len(args) > 1 {
 		return argumentError(command, "too many arguments: "+quotedArguments(args[1:]))
+	}
+	return nil
+}
+
+func requireVariable(command *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return argumentError(command, "missing variable name")
+	}
+	if len(args) > 1 {
+		return argumentError(command, "too many arguments: "+quotedArguments(args[1:]))
+	}
+	return nil
+}
+
+func projectLinkArgs(command *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return argumentError(command, "missing project name")
+	}
+	if len(args) > 2 {
+		return argumentError(command, "too many arguments: "+quotedArguments(args[2:]))
 	}
 	return nil
 }
@@ -329,6 +351,205 @@ func (app *application) setCommand() *cobra.Command {
 	}}
 }
 
+type variableDiff struct {
+	LocalOnly  []string
+	Changed    []string
+	RemoteOnly []string
+}
+
+func compareVariables(local, remote map[string]string) variableDiff {
+	var result variableDiff
+	for name, localValue := range local {
+		remoteValue, exists := remote[name]
+		switch {
+		case !exists:
+			result.LocalOnly = append(result.LocalOnly, name)
+		case localValue != remoteValue:
+			result.Changed = append(result.Changed, name)
+		}
+	}
+	for name := range remote {
+		if _, exists := local[name]; !exists {
+			result.RemoteOnly = append(result.RemoteOnly, name)
+		}
+	}
+	sort.Strings(result.LocalOnly)
+	sort.Strings(result.Changed)
+	sort.Strings(result.RemoteOnly)
+	return result
+}
+
+func (difference variableDiff) empty() bool {
+	return len(difference.LocalOnly) == 0 && len(difference.Changed) == 0 && len(difference.RemoteOnly) == 0
+}
+
+func (app *application) statusCommand() *cobra.Command {
+	return &cobra.Command{Use: "status", Short: "Show the current project and environment status", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
+		directory, metadata, err := app.projectContext(command.Context(), true)
+		if err != nil {
+			return err
+		}
+		if metadata.Environment == "" {
+			return errors.New("no active environment; run `argus get <environment>` or `argus push <environment>` first")
+		}
+		local, err := dotenv.Read(directory)
+		if err != nil {
+			return err
+		}
+		remote, err := app.client.Inspect(command.Context(), metadata.ProjectID, metadata.Environment)
+		if err != nil {
+			return err
+		}
+		difference := compareVariables(local, remote)
+		fmt.Fprintf(app.out, "%s %s\n%s %s\n", ui.Muted.Render("Project:"), metadata.ProjectName, ui.Muted.Render("Environment:"), metadata.Environment)
+		if difference.empty() {
+			fmt.Fprintln(app.out, ui.Success.Render("✓ Local .env is in sync."))
+			return nil
+		}
+		fmt.Fprintf(app.out, "%s Local .env differs: %d local-only, %d changed, %d remote-only.\n", ui.Error.Render("!"), len(difference.LocalOnly), len(difference.Changed), len(difference.RemoteOnly))
+		return nil
+	}}
+}
+
+func (app *application) diffCommand() *cobra.Command {
+	return &cobra.Command{Use: "diff <environment>", Short: "Compare local .env with a remote environment", Example: "  argus diff dev\n  argus diff prod", Args: requireEnvironment, RunE: func(command *cobra.Command, args []string) error {
+		directory, metadata, err := app.projectContext(command.Context(), true)
+		if err != nil {
+			return err
+		}
+		local, err := dotenv.Read(directory)
+		if err != nil {
+			return err
+		}
+		remote, err := app.client.Inspect(command.Context(), metadata.ProjectID, args[0])
+		if err != nil {
+			return err
+		}
+		difference := compareVariables(local, remote)
+		if difference.empty() {
+			fmt.Fprintf(app.out, "%s Local .env matches %s.\n", ui.Success.Render("✓"), args[0])
+			return nil
+		}
+		for _, name := range difference.LocalOnly {
+			fmt.Fprintf(app.out, "%s %s %s\n", ui.Success.Render("+"), name, ui.Muted.Render("local only"))
+		}
+		for _, name := range difference.Changed {
+			fmt.Fprintf(app.out, "%s %s %s\n", ui.Title.Render("~"), name, ui.Muted.Render("changed"))
+		}
+		for _, name := range difference.RemoteOnly {
+			fmt.Fprintf(app.out, "%s %s %s\n", ui.Error.Render("-"), name, ui.Muted.Render("remote only"))
+		}
+		return nil
+	}}
+}
+
+func (app *application) deleteCommand() *cobra.Command {
+	return &cobra.Command{Use: "delete <variable>", Short: "Delete a variable locally and remotely", Example: "  argus delete OLD_API_KEY", Args: requireVariable, RunE: func(command *cobra.Command, args []string) error {
+		if err := dotenv.ValidateName(args[0]); err != nil {
+			return err
+		}
+		directory, metadata, err := app.projectContext(command.Context(), false)
+		if err != nil {
+			return err
+		}
+		if metadata.Environment == "" {
+			return errors.New("no active environment; run `argus get <environment>` or `argus push <environment>` first")
+		}
+		confirmed, err := app.confirm(fmt.Sprintf("Delete %q from %q? This removes it locally and remotely.", args[0], metadata.Environment))
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			fmt.Fprintln(app.out, "Deletion cancelled.")
+			return nil
+		}
+		if err := app.client.DeleteVariable(command.Context(), metadata.ProjectID, metadata.Environment, args[0]); err != nil {
+			return err
+		}
+		if _, err := dotenv.Delete(directory, args[0]); err != nil {
+			return fmt.Errorf("remote variable was deleted, but local .env update failed: %w", err)
+		}
+		fmt.Fprintf(app.out, "%s Deleted %s from %s.\n", ui.Success.Render("✓"), args[0], metadata.Environment)
+		return nil
+	}}
+}
+
+func (app *application) projectCommand() *cobra.Command {
+	command := &cobra.Command{Use: "project", Short: "Manage project connections"}
+	command.AddCommand(app.projectLinkCommand())
+	return command
+}
+
+func (app *application) projectLinkCommand() *cobra.Command {
+	return &cobra.Command{Use: "link <project> [environment]", Short: "Link the current directory to an existing project", Example: "  argus project link portfolio\n  argus project link portfolio prod", Args: projectLinkArgs, RunE: func(command *cobra.Command, args []string) error {
+		directory, err := app.cwd()
+		if err != nil {
+			return err
+		}
+		if discovered, discoveryErr := app.discover(directory); discoveryErr == nil {
+			directory = discovered.Root
+		}
+		projects, err := app.client.List(command.Context())
+		if err != nil {
+			return err
+		}
+		var selected *api.Project
+		for index := range projects {
+			if strings.EqualFold(projects[index].Name, args[0]) {
+				selected = &projects[index]
+				break
+			}
+		}
+		if selected == nil {
+			return fmt.Errorf("project %q was not found", args[0])
+		}
+		environment := ""
+		if len(args) == 2 {
+			environment, _ = projectEnvironment(*selected, args[1])
+			if environment == "" {
+				return fmt.Errorf("environment %q was not found in project %q", args[1], selected.Name)
+			}
+		} else if len(selected.Environments) == 1 {
+			environment = selected.Environments[0].Name
+		} else if len(selected.Environments) > 1 {
+			environment, err = app.selectEnvironment(selected.Environments)
+			if err != nil {
+				return err
+			}
+		}
+		if err := config.Save(directory, config.Project{ProjectID: selected.ID, ProjectName: selected.Name, Environment: environment}); err != nil {
+			return err
+		}
+		if environment == "" {
+			fmt.Fprintf(app.out, "%s Linked %s to %s.\n", ui.Success.Render("✓"), directory, selected.Name)
+		} else {
+			fmt.Fprintf(app.out, "%s Linked %s to %s (%s).\n", ui.Success.Render("✓"), directory, selected.Name, environment)
+		}
+		return nil
+	}}
+}
+
+func projectEnvironment(project api.Project, name string) (string, bool) {
+	for _, environment := range project.Environments {
+		if strings.EqualFold(environment.Name, name) {
+			return environment.Name, true
+		}
+	}
+	return "", false
+}
+
+func (app *application) selectEnvironment(environments []api.Environment) (string, error) {
+	options := make([]huh.Option[string], 0, len(environments))
+	for _, environment := range environments {
+		options = append(options, huh.NewOption(environment.Name, environment.Name))
+	}
+	value := ""
+	if err := huh.NewSelect[string]().Title("Environment").Options(options...).Value(&value).Run(); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
 func (app *application) listCommand() *cobra.Command {
 	command := &cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "List projects and environments", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
 		projects, err := app.client.List(command.Context())
@@ -531,6 +752,9 @@ func (app *application) secretPrompt(title string) (string, error) {
 }
 
 func (app *application) confirm(title string) (bool, error) {
+	if app.confirmPrompt != nil {
+		return app.confirmPrompt(title)
+	}
 	confirmed := false
 	err := huh.NewConfirm().
 		Title(title).

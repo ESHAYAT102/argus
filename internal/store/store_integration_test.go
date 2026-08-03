@@ -67,19 +67,26 @@ func TestStoreLifecycle(t *testing.T) {
 	if err := data.Set(ctx, userID, project.ID, "prod", "THIRD", "three"); err != nil {
 		t.Fatal(err)
 	}
-	values, err := data.Get(ctx, userID, project.ID, "prod")
+	values, err := data.Get(ctx, userID, project.ID, "prod", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if values["SECOND"] != "two" || values["THIRD"] != "three" {
 		t.Fatalf("unexpected values: %#v", values)
 	}
+	if err := data.DeleteVariable(ctx, userID, project.ID, "prod", "THIRD"); err != nil {
+		t.Fatal(err)
+	}
+	values, err = data.Get(ctx, userID, project.ID, "prod", false)
+	if err != nil || values["THIRD"] != "" || values["SECOND"] != "two" {
+		t.Fatalf("values after delete=%#v err=%v", values, err)
+	}
 	projects, err := data.List(ctx, userID)
 	if err != nil || len(projects) != 1 {
 		t.Fatalf("projects=%#v err=%v", projects, err)
 	}
 	events, err := data.History(ctx, userID, project.ID)
-	if err != nil || len(events) < 5 {
+	if err != nil || len(events) < 6 {
 		t.Fatalf("events=%d err=%v", len(events), err)
 	}
 	if err := data.RemoveEnvironment(ctx, userID, project.ID, "dev"); err != nil {

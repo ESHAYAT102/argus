@@ -63,3 +63,32 @@ func TestValidateName(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteRemovesOnlyRequestedVariable(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, Filename), []byte("KEEP=yes\nREMOVE=secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := Delete(directory, "REMOVE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Fatal("expected variable to be removed")
+	}
+	values, err := Read(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values["KEEP"] != "yes" {
+		t.Fatalf("values = %#v", values)
+	}
+}
+
+func TestDeleteMissingVariableIsNoOp(t *testing.T) {
+	directory := t.TempDir()
+	removed, err := Delete(directory, "MISSING")
+	if err != nil || removed {
+		t.Fatalf("removed=%v err=%v", removed, err)
+	}
+}

@@ -68,6 +68,8 @@ func activityPresentation(action string) (charmlog.Level, string) {
 		return charmlog.InfoLevel, "Variable added +"
 	case "variable.changed":
 		return charmlog.WarnLevel, "Variable changed ◆"
+	case "variable.removed":
+		return charmlog.ErrorLevel, "Variable removed −"
 	default:
 		return charmlog.InfoLevel, strings.ReplaceAll(action, ".", " ")
 	}

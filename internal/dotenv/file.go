@@ -97,6 +97,29 @@ func Set(directory, name, value string) error {
 	return os.WriteFile(path, encoded, 0o600)
 }
 
+func Delete(directory, name string) (bool, error) {
+	path := filepath.Join(directory, Filename)
+	values, err := godotenv.Read(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", path, err)
+	}
+	if _, exists := values[name]; !exists {
+		return false, nil
+	}
+	delete(values, name)
+	encoded, err := marshal(values)
+	if err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		return false, fmt.Errorf("write %s: %w", path, err)
+	}
+	return true, nil
+}
+
 func marshal(values map[string]string) ([]byte, error) {
 	keys := make([]string, 0, len(values))
 	for key := range values {

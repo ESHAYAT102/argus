@@ -47,7 +47,9 @@ type Client interface {
 	Push(ctx context.Context, projectID, environment string, variables map[string]string) (Environment, error)
 	EnvironmentExists(ctx context.Context, projectID, environment string) (bool, error)
 	Get(ctx context.Context, projectID, environment string) (map[string]string, error)
+	Inspect(ctx context.Context, projectID, environment string) (map[string]string, error)
 	Set(ctx context.Context, projectID, environment, name, value string) error
+	DeleteVariable(ctx context.Context, projectID, environment, name string) error
 	List(ctx context.Context) ([]Project, error)
 	History(ctx context.Context, projectID string) ([]Activity, error)
 	RemoveEnvironment(ctx context.Context, projectID, environment string) error

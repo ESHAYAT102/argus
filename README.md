@@ -48,6 +48,10 @@ argus init [environment]           Create a project and push .env
 argus push [environment]           Push .env
 argus get <environment>            Fetch into .env
 argus set <variable> [value]       Update one variable
+argus status                       Show local/remote synchronization status
+argus diff <environment>           Compare variable names without showing values
+argus delete <variable>            Delete a variable locally and remotely
+argus project link <project> [env] Link this directory to an existing project
 argus list                         List projects and environments
 argus history                      Show activity
 argus remove <environment>         Remove an environment
@@ -57,6 +61,10 @@ argus destroy <project>            Destroy a project by name
 `ls`, `activity`, and `rm` are aliases for `list`, `history`, and `remove`.
 
 `argus auth` copies GitHub's one-time code to the clipboard, waits for Enter, and opens the verification page in the default browser. If desktop integration is unavailable, it prints manual instructions instead.
+
+`argus status` compares `.env` with the active environment. `argus diff` shows only variable names marked as local-only, changed, or remote-only; secret values are never printed. These comparisons do not create fetch entries in project history.
+
+`argus delete` requires confirmation and removes the variable remotely before updating `.env`. `argus project link` stores the association in the user-wide registry below, never inside the project. When a project has multiple environments and none is supplied, Argus presents an environment picker.
 
 ## Safe fetches
 
