@@ -93,8 +93,10 @@ func (client *HTTPClient) Authenticate(ctx context.Context) error {
 func (client *HTTPClient) presentDeviceAuthorization(device deviceAuth) error {
 	if err := client.copy(device.UserCode); err != nil {
 		fmt.Fprintln(client.output, "Could not copy the code automatically; copy it from below.")
+		fmt.Fprintf(client.output, "Your one-time code: %s\n", device.UserCode)
+	} else {
+		fmt.Fprintf(client.output, "Copied to clipboard: %s\n", device.UserCode)
 	}
-	fmt.Fprintf(client.output, "Your one-time code: %s\n", device.UserCode)
 	fmt.Fprintf(client.output, "Press Enter to open %s in your browser...", device.VerificationURI)
 	if _, err := bufio.NewReader(client.input).ReadString('\n'); err != nil {
 		return errors.New("authentication requires an interactive terminal; press Enter to continue")

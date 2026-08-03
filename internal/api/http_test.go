@@ -35,7 +35,7 @@ func TestPresentDeviceAuthorizationCopiesThenOpens(t *testing.T) {
 	if opened != device.VerificationURI {
 		t.Fatalf("opened %q", opened)
 	}
-	want := "Your one-time code: EACA-64BA\nPress Enter to open https://github.com/login/device in your browser...\n"
+	want := "Copied to clipboard: EACA-64BA\nPress Enter to open https://github.com/login/device in your browser...\n"
 	if output.String() != want {
 		t.Fatalf("output = %q, want %q", output.String(), want)
 	}
