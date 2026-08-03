@@ -15,11 +15,10 @@ import (
 const registryFile = "argus.toml"
 
 type Project struct {
-	Directory     string `toml:"directory"`
-	ProjectID     string `toml:"project_id"`
-	ProjectName   string `toml:"project_name"`
-	Environment   string `toml:"environment,omitempty"`
-	PullSignature string `toml:"pull_signature,omitempty"`
+	Directory   string `toml:"directory"`
+	ProjectID   string `toml:"project_id"`
+	ProjectName string `toml:"project_name"`
+	Environment string `toml:"environment,omitempty"`
 }
 
 type registry struct {

@@ -74,7 +74,7 @@ When `argus pull` encounters a non-empty `.env` that was not created by the prev
 .env.backup.20260804-143052
 ```
 
-Pulling another environment over an untouched Argus-pulled `.env` does not create a redundant backup. Replacements are written to a temporary owner-only file first. If a backed-up installation fails, Argus attempts to restore the original file.
+Before switching environments, Argus compares the local variable names and values with the currently active remote environment. An exact match is replaced without a redundant backup; any local addition, removal, or changed value is backed up. Replacements are written to a temporary owner-only file first. If a backed-up installation fails, Argus attempts to restore the original file.
 
 ## Development
 

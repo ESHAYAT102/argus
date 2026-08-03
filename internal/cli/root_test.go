@@ -49,6 +49,10 @@ func (client *pullClient) Get(_ context.Context, _, environment string) (map[str
 	return client.environments[environment], nil
 }
 
+func (client *pullClient) Inspect(_ context.Context, _, environment string) (map[string]string, error) {
+	return client.environments[environment], nil
+}
+
 func (client *deletionClient) DeleteVariable(context.Context, string, string, string) error {
 	client.called = true
 	return client.err
@@ -303,12 +307,14 @@ func TestPullCommandReplacesGet(t *testing.T) {
 
 func TestPullBackupBehavior(t *testing.T) {
 	for _, test := range []struct {
-		name          string
-		modifyBetween bool
-		wantBackups   int
+		name        string
+		localBefore string
+		wantBackups int
 	}{
 		{name: "untouched pulled file", wantBackups: 0},
-		{name: "locally modified file", modifyBetween: true, wantBackups: 1},
+		{name: "changed local value", localBefore: "MODE=custom-local-value\nPORT=3000\n", wantBackups: 1},
+		{name: "extra local variable", localBefore: "MODE=development\nPORT=3000\nEXTRA=local\n", wantBackups: 1},
+		{name: "missing local variable", localBefore: "MODE=development\n", wantBackups: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("ARGUS_DATA_HOME", t.TempDir())
@@ -318,7 +324,7 @@ func TestPullBackupBehavior(t *testing.T) {
 			}
 			app := &application{
 				client: &pullClient{environments: map[string]map[string]string{
-					"dev":  {"MODE": "development"},
+					"dev":  {"MODE": "development", "PORT": "3000"},
 					"prod": {"MODE": "production"},
 				}},
 				out: &bytes.Buffer{},
@@ -328,8 +334,8 @@ func TestPullBackupBehavior(t *testing.T) {
 			if err := app.pullCommand().RunE(app.pullCommand(), []string{"dev"}); err != nil {
 				t.Fatal(err)
 			}
-			if test.modifyBetween {
-				if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("MODE=custom-local-value\n"), 0o600); err != nil {
+			if test.localBefore != "" {
+				if err := os.WriteFile(filepath.Join(directory, ".env"), []byte(test.localBefore), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}

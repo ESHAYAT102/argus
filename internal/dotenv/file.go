@@ -87,16 +87,6 @@ func write(directory string, values map[string]string, now time.Time, backupExis
 	return backupPath, nil
 }
 
-// FileSignature identifies the current .env file using non-secret filesystem
-// metadata. It lets the CLI recognize an untouched file from the last pull.
-func FileSignature(directory string) (string, error) {
-	info, err := os.Stat(filepath.Join(directory, Filename))
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano()), nil
-}
-
 func Set(directory, name, value string) error {
 	values := map[string]string{}
 	path := filepath.Join(directory, Filename)

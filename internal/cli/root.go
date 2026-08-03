@@ -303,9 +303,19 @@ func (app *application) pullCommand() *cobra.Command {
 			return err
 		}
 		managed := false
-		if metadata.PullSignature != "" {
-			signature, signatureErr := dotenv.FileSignature(directory)
-			managed = signatureErr == nil && signature == metadata.PullSignature
+		local, localErr := dotenv.Read(directory)
+		if localErr == nil && metadata.Environment != "" {
+			activeRemote := values
+			if !strings.EqualFold(metadata.Environment, args[0]) {
+				activeRemote, err = app.client.Inspect(command.Context(), metadata.ProjectID, metadata.Environment)
+				if err != nil && !errors.Is(err, api.ErrNotFound) {
+					return err
+				}
+				if errors.Is(err, api.ErrNotFound) {
+					activeRemote = nil
+				}
+			}
+			managed = compareVariables(local, activeRemote).empty()
 		}
 		backup := ""
 		if managed {
@@ -317,10 +327,6 @@ func (app *application) pullCommand() *cobra.Command {
 			return err
 		}
 		metadata.Environment = args[0]
-		metadata.PullSignature, err = dotenv.FileSignature(directory)
-		if err != nil {
-			return err
-		}
 		if err := config.Save(directory, metadata); err != nil {
 			return err
 		}
