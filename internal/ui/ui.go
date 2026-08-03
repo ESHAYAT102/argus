@@ -53,7 +53,6 @@ func ProjectsTable(writer io.Writer, projects []struct{ Name, Environments strin
 
 	box := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(muted).
-		Padding(1, 2)
+		BorderForeground(muted)
 	fmt.Fprintln(writer, box.Render(model.View()))
 }
