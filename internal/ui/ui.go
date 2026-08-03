@@ -12,6 +12,7 @@ var (
 	purple  = lipgloss.Color("99")
 	muted   = lipgloss.Color("241")
 	Success = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	Error   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
 	Title   = lipgloss.NewStyle().Bold(true).Foreground(purple)
 	Muted   = lipgloss.NewStyle().Foreground(muted)
 )

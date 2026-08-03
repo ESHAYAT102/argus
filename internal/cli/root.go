@@ -17,7 +17,6 @@ import (
 	"github.com/argus-env/argus/internal/project"
 	"github.com/argus-env/argus/internal/ui"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +43,7 @@ func Execute() error {
 	}
 	command := app.rootCommand()
 	if err := command.Execute(); err != nil {
-		log.New(app.errOut).Error(err)
+		app.printError(err)
 		return err
 	}
 	return nil
@@ -74,8 +73,66 @@ func (app *application) rootCommand() *cobra.Command {
 	return root
 }
 
+func (app *application) printError(err error) {
+	fmt.Fprintf(app.errOut, "%s %s\n", ui.Error.Render("Error:"), err)
+}
+
+func noArgs(command *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	return argumentError(command, fmt.Sprintf("%s doesn't accept arguments", command.Name()))
+}
+
+func atMostOneArg(command *cobra.Command, args []string) error {
+	if len(args) <= 1 {
+		return nil
+	}
+	return argumentError(command, "too many arguments: "+quotedArguments(args[1:]))
+}
+
+func requireEnvironment(command *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return argumentError(command, "missing environment name")
+	}
+	if len(args) > 1 {
+		return argumentError(command, "too many arguments: "+quotedArguments(args[1:]))
+	}
+	return nil
+}
+
+func setArgs(command *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return argumentError(command, "missing variable name")
+	}
+	if len(args) > 2 {
+		return argumentError(command, "too many arguments: "+quotedArguments(args[2:]))
+	}
+	return nil
+}
+
+func argumentError(command *cobra.Command, message string) error {
+	var hint strings.Builder
+	hint.WriteString(message)
+	hint.WriteString("\n\nUsage:\n  ")
+	hint.WriteString(command.UseLine())
+	if command.Example != "" {
+		hint.WriteString("\n\nExamples:\n")
+		hint.WriteString(command.Example)
+	}
+	return errors.New(hint.String())
+}
+
+func quotedArguments(args []string) string {
+	quoted := make([]string, len(args))
+	for index, argument := range args {
+		quoted[index] = fmt.Sprintf("%q", argument)
+	}
+	return strings.Join(quoted, ", ")
+}
+
 func (app *application) authCommand() *cobra.Command {
-	return &cobra.Command{Use: "auth", Short: "Sign in with GitHub", Args: cobra.NoArgs, RunE: func(command *cobra.Command, _ []string) error {
+	return &cobra.Command{Use: "auth", Short: "Sign in with GitHub", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
 		if err := app.client.Authenticate(command.Context()); err != nil {
 			return err
 		}
@@ -85,7 +142,7 @@ func (app *application) authCommand() *cobra.Command {
 }
 
 func (app *application) logoutCommand() *cobra.Command {
-	return &cobra.Command{Use: "logout", Short: "Log out of Argus", Args: cobra.NoArgs, RunE: func(command *cobra.Command, _ []string) error {
+	return &cobra.Command{Use: "logout", Short: "Log out of Argus", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
 		if err := app.client.Logout(command.Context()); err != nil {
 			return err
 		}
@@ -95,7 +152,7 @@ func (app *application) logoutCommand() *cobra.Command {
 }
 
 func (app *application) initCommand() *cobra.Command {
-	return &cobra.Command{Use: "init [environment]", Short: "Initialize a project and push its .env", Args: cobra.MaximumNArgs(1), RunE: func(command *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "init [environment]", Short: "Initialize a project and push its .env", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
 		directory, err := app.cwd()
 		if err != nil {
 			return err
@@ -133,7 +190,7 @@ func (app *application) initCommand() *cobra.Command {
 }
 
 func (app *application) syncCommand() *cobra.Command {
-	return &cobra.Command{Use: "sync [environment]", Short: "Push the current .env", Args: cobra.MaximumNArgs(1), RunE: func(command *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "sync [environment]", Short: "Push the current .env", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
 		directory, metadata, err := app.projectContext(command.Context(), true)
 		if err != nil {
 			return err
@@ -162,7 +219,8 @@ func (app *application) syncCommand() *cobra.Command {
 				return err
 			}
 			if !confirmed {
-				return errors.New("sync cancelled")
+				fmt.Fprintln(app.out, "Sync cancelled.")
+				return nil
 			}
 		}
 		if _, err := app.client.Sync(command.Context(), metadata.ProjectID, environment, values); err != nil {
@@ -178,7 +236,7 @@ func (app *application) syncCommand() *cobra.Command {
 }
 
 func (app *application) getCommand() *cobra.Command {
-	return &cobra.Command{Use: "get [environment]", Short: "Fetch an environment into .env", Args: cobra.ExactArgs(1), RunE: func(command *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get <environment>", Short: "Fetch an environment into .env", Example: "  argus get dev\n  argus get prod", Args: requireEnvironment, RunE: func(command *cobra.Command, args []string) error {
 		directory, metadata, err := app.projectContext(command.Context(), true)
 		if err != nil {
 			return err
@@ -204,7 +262,7 @@ func (app *application) getCommand() *cobra.Command {
 }
 
 func (app *application) setCommand() *cobra.Command {
-	return &cobra.Command{Use: "set <variable> [value]", Short: "Set a variable locally and remotely", Args: cobra.RangeArgs(1, 2), RunE: func(command *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "set <variable> [value]", Short: "Set a variable locally and remotely", Example: "  argus set API_KEY\n  argus set PORT 3000", Args: setArgs, RunE: func(command *cobra.Command, args []string) error {
 		if err := dotenv.ValidateName(args[0]); err != nil {
 			return err
 		}
@@ -237,7 +295,7 @@ func (app *application) setCommand() *cobra.Command {
 }
 
 func (app *application) listCommand() *cobra.Command {
-	command := &cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "List projects and environments", Args: cobra.NoArgs, RunE: func(command *cobra.Command, _ []string) error {
+	command := &cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "List projects and environments", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
 		projects, err := app.client.List(command.Context())
 		if err != nil {
 			return err
@@ -258,7 +316,7 @@ func (app *application) listCommand() *cobra.Command {
 }
 
 func (app *application) historyCommand() *cobra.Command {
-	return &cobra.Command{Use: "history", Aliases: []string{"activity"}, Short: "Show project activity", Args: cobra.NoArgs, RunE: func(command *cobra.Command, _ []string) error {
+	return &cobra.Command{Use: "history", Aliases: []string{"activity"}, Short: "Show project activity", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
 		projectID := ""
 		if directory, err := app.cwd(); err == nil {
 			if metadata, err := config.Load(directory); err == nil {
@@ -281,7 +339,7 @@ func (app *application) historyCommand() *cobra.Command {
 }
 
 func (app *application) removeCommand() *cobra.Command {
-	return &cobra.Command{Use: "remove <environment>", Aliases: []string{"rm"}, Short: "Permanently remove an environment", Args: cobra.ExactArgs(1), RunE: func(command *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "remove <environment>", Aliases: []string{"rm"}, Short: "Permanently remove an environment", Example: "  argus remove dev\n  argus rm prod", Args: requireEnvironment, RunE: func(command *cobra.Command, args []string) error {
 		_, metadata, err := app.projectContext(command.Context(), false)
 		if err != nil {
 			return err
@@ -291,7 +349,8 @@ func (app *application) removeCommand() *cobra.Command {
 			return err
 		}
 		if !confirmed {
-			return errors.New("remove cancelled")
+			fmt.Fprintln(app.out, "Removal cancelled.")
+			return nil
 		}
 		if err := app.client.RemoveEnvironment(command.Context(), metadata.ProjectID, args[0]); err != nil {
 			return err
@@ -302,7 +361,7 @@ func (app *application) removeCommand() *cobra.Command {
 }
 
 func (app *application) destroyCommand() *cobra.Command {
-	return &cobra.Command{Use: "destroy [project]", Short: "Permanently destroy a project", Args: cobra.MaximumNArgs(1), RunE: func(command *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "destroy [project]", Short: "Permanently destroy a project", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
 		directory, metadata, err := app.destroyTarget(command.Context(), args)
 		if err != nil {
 			return err
