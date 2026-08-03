@@ -2,10 +2,29 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/argus-env/argus/internal/api"
 )
+
+type authenticationClient struct {
+	api.Client
+	user              api.User
+	whoamiErr         error
+	authenticateCalls int
+}
+
+func (client *authenticationClient) WhoAmI(context.Context) (api.User, error) {
+	return client.user, client.whoamiErr
+}
+
+func (client *authenticationClient) Authenticate(context.Context) error {
+	client.authenticateCalls++
+	return nil
+}
 
 func TestGetMissingEnvironmentError(t *testing.T) {
 	app := &application{}
@@ -58,5 +77,46 @@ func TestPushCommandReplacesSync(t *testing.T) {
 	}
 	if !foundPush {
 		t.Fatal("push command is not registered")
+	}
+}
+
+func TestAuthDoesNotAuthenticateTwice(t *testing.T) {
+	var output bytes.Buffer
+	client := &authenticationClient{user: api.User{Username: "octocat"}}
+	app := &application{client: client, out: &output}
+	command := app.authCommand()
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	if client.authenticateCalls != 0 {
+		t.Fatalf("Authenticate called %d times", client.authenticateCalls)
+	}
+	if got := output.String(); got != "Already authenticated as octocat.\n" {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestAuthStartsWhenSessionIsMissing(t *testing.T) {
+	client := &authenticationClient{whoamiErr: api.ErrUnauthenticated}
+	app := &application{client: client, out: &bytes.Buffer{}}
+	command := app.authCommand()
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	if client.authenticateCalls != 1 {
+		t.Fatalf("Authenticate called %d times", client.authenticateCalls)
+	}
+}
+
+func TestWhoAmIPrintsUsername(t *testing.T) {
+	var output bytes.Buffer
+	client := &authenticationClient{user: api.User{Username: "octocat"}}
+	app := &application{client: client, out: &output}
+	command := app.whoamiCommand()
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "octocat\n" {
+		t.Fatalf("output = %q", output.String())
 	}
 }

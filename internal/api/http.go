@@ -14,6 +14,7 @@ import (
 )
 
 var ErrNotFound = errors.New("resource not found")
+var ErrUnauthenticated = errors.New("not authenticated")
 
 type TokenStore interface {
 	Load() (string, error)
@@ -85,10 +86,16 @@ func (client *HTTPClient) Logout(ctx context.Context) error {
 	}
 	// Logging out must always remove the local credential. An expired remote
 	// session is already logged out for practical purposes.
-	if err != nil && !strings.Contains(err.Error(), "invalid or expired session") {
+	if err != nil && !errors.Is(err, ErrUnauthenticated) {
 		return err
 	}
 	return nil
+}
+
+func (client *HTTPClient) WhoAmI(ctx context.Context) (User, error) {
+	var user User
+	err := client.request(ctx, http.MethodGet, "/v1/auth/me", nil, &user, true)
+	return user, err
 }
 
 func (client *HTTPClient) InitProject(ctx context.Context, request InitProjectRequest) (Project, Environment, error) {
@@ -179,7 +186,7 @@ func (client *HTTPClient) request(ctx context.Context, method, path string, inpu
 	if authenticated {
 		token, err := client.tokens.Load()
 		if err != nil {
-			return errors.New("not authenticated; run `argus auth`")
+			return ErrUnauthenticated
 		}
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -191,6 +198,9 @@ func (client *HTTPClient) request(ctx context.Context, method, path string, inpu
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
 		return ErrNotFound
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		return ErrUnauthenticated
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var problem struct {

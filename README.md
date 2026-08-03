@@ -42,6 +42,7 @@ irm https://raw.githubusercontent.com/ESHAYAT102/argus/main/scripts/uninstall.ps
 
 ```text
 argus auth                         Sign in with GitHub
+argus whoami                       Show the authenticated GitHub username
 argus logout                       Log out
 argus init [environment]           Create a project and push .env
 argus push [environment]           Push .env

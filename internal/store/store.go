@@ -54,6 +54,15 @@ func (store *Store) Authenticate(ctx context.Context, token string) (string, err
 	return userID, err
 }
 
+func (store *Store) CurrentUser(ctx context.Context, userID string) (api.User, error) {
+	var user api.User
+	err := store.db.QueryRow(ctx, `SELECT id, github_login FROM users WHERE id=$1`, userID).Scan(&user.ID, &user.Username)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return api.User{}, ErrNotFound
+	}
+	return user, err
+}
+
 func (store *Store) Logout(ctx context.Context, token string) error {
 	hash := sha256.Sum256([]byte(token))
 	_, err := store.db.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, hash[:])

@@ -27,6 +27,11 @@ type Activity struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type User struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
 type InitProjectRequest struct {
 	Name        string            `json:"name"`
 	Repository  string            `json:"repository,omitempty"`
@@ -36,6 +41,7 @@ type InitProjectRequest struct {
 
 type Client interface {
 	Authenticate(ctx context.Context) error
+	WhoAmI(ctx context.Context) (User, error)
 	Logout(ctx context.Context) error
 	InitProject(ctx context.Context, request InitProjectRequest) (Project, Environment, error)
 	Push(ctx context.Context, projectID, environment string, variables map[string]string) (Environment, error)

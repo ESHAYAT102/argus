@@ -34,6 +34,7 @@ func New(database *pgxpool.Pool, data *store.Store, github *githubauth.Client) h
 	mux.HandleFunc("GET /health", server.health)
 	mux.HandleFunc("POST /v1/auth/github/device", server.startDevice)
 	mux.HandleFunc("POST /v1/auth/github/device/poll", server.pollDevice)
+	mux.Handle("GET /v1/auth/me", server.auth(http.HandlerFunc(server.me)))
 	mux.Handle("POST /v1/auth/logout", server.auth(http.HandlerFunc(server.logout)))
 	mux.Handle("POST /v1/projects", server.auth(http.HandlerFunc(server.initProject)))
 	mux.Handle("GET /v1/projects", server.auth(http.HandlerFunc(server.listProjects)))
@@ -102,6 +103,15 @@ func (server *Server) logout(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) me(writer http.ResponseWriter, request *http.Request) {
+	user, err := server.store.CurrentUser(request.Context(), userID(request))
+	if err != nil {
+		problem(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, user)
 }
 
 func (server *Server) initProject(writer http.ResponseWriter, request *http.Request) {

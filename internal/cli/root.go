@@ -65,7 +65,7 @@ func (app *application) rootCommand() *cobra.Command {
 	root.SetOut(app.out)
 	root.SetErr(app.errOut)
 	root.AddCommand(
-		app.authCommand(), app.logoutCommand(), app.initCommand(),
+		app.authCommand(), app.whoamiCommand(), app.logoutCommand(), app.initCommand(),
 		app.pushCommand(), app.getCommand(), app.setCommand(),
 		app.listCommand(), app.historyCommand(), app.removeCommand(),
 		app.destroyCommand(),
@@ -133,10 +133,32 @@ func quotedArguments(args []string) string {
 
 func (app *application) authCommand() *cobra.Command {
 	return &cobra.Command{Use: "auth", Short: "Sign in with GitHub", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
+		user, err := app.client.WhoAmI(command.Context())
+		if err == nil {
+			fmt.Fprintf(app.out, "Already authenticated as %s.\n", user.Username)
+			return nil
+		}
+		if !errors.Is(err, api.ErrUnauthenticated) {
+			return err
+		}
 		if err := app.client.Authenticate(command.Context()); err != nil {
 			return err
 		}
 		fmt.Fprintln(app.out, ui.Success.Render("Authenticated with GitHub."))
+		return nil
+	}}
+}
+
+func (app *application) whoamiCommand() *cobra.Command {
+	return &cobra.Command{Use: "whoami", Short: "Show the authenticated GitHub username", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
+		user, err := app.client.WhoAmI(command.Context())
+		if errors.Is(err, api.ErrUnauthenticated) {
+			return errors.New("not authenticated; run `argus auth`")
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(app.out, user.Username)
 		return nil
 	}}
 }

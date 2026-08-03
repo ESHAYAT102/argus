@@ -45,6 +45,10 @@ func TestStoreLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	user, err := data.CurrentUser(ctx, userID)
+	if err != nil || user.Username != "integration-user" {
+		t.Fatalf("user=%#v err=%v", user, err)
+	}
 	project, environment, err := data.InitProject(ctx, userID, api.InitProjectRequest{Name: "integration-project", Environment: "dev", Variables: map[string]string{"FIRST": "one"}})
 	if err != nil {
 		t.Fatal(err)
