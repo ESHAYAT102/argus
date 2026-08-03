@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -26,6 +28,10 @@ type HTTPClient struct {
 	baseURL string
 	http    *http.Client
 	tokens  TokenStore
+	input   io.Reader
+	output  io.Writer
+	copy    func(string) error
+	open    func(string) error
 }
 
 func NewHTTPClient(baseURL string, tokens TokenStore) *HTTPClient {
@@ -33,6 +39,10 @@ func NewHTTPClient(baseURL string, tokens TokenStore) *HTTPClient {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		http:    &http.Client{Timeout: 30 * time.Second},
 		tokens:  tokens,
+		input:   os.Stdin,
+		output:  os.Stdout,
+		copy:    copyToClipboard,
+		open:    openBrowser,
 	}
 }
 
@@ -48,7 +58,9 @@ func (client *HTTPClient) Authenticate(ctx context.Context) error {
 	if err := client.request(ctx, http.MethodPost, "/v1/auth/github/device", nil, &device, false); err != nil {
 		return err
 	}
-	fmt.Printf("Open %s and enter code %s\n", device.VerificationURI, device.UserCode)
+	if err := client.presentDeviceAuthorization(device); err != nil {
+		return err
+	}
 	interval := time.Duration(device.Interval) * time.Second
 	if interval < time.Second {
 		interval = 5 * time.Second
@@ -76,6 +88,23 @@ func (client *HTTPClient) Authenticate(ctx context.Context) error {
 		}
 		return client.tokens.Save(session.Token)
 	}
+}
+
+func (client *HTTPClient) presentDeviceAuthorization(device deviceAuth) error {
+	if err := client.copy(device.UserCode); err != nil {
+		fmt.Fprintln(client.output, "Could not copy the code automatically; copy it from below.")
+	}
+	fmt.Fprintf(client.output, "Your one-time code: %s\n", device.UserCode)
+	fmt.Fprintf(client.output, "Press Enter to open %s in your browser...", device.VerificationURI)
+	if _, err := bufio.NewReader(client.input).ReadString('\n'); err != nil {
+		return errors.New("authentication requires an interactive terminal; press Enter to continue")
+	}
+	if err := client.open(device.VerificationURI); err != nil {
+		fmt.Fprintf(client.output, "\nCould not open your browser. Open %s manually.\n", device.VerificationURI)
+		return nil
+	}
+	fmt.Fprintln(client.output)
+	return nil
 }
 
 func (client *HTTPClient) Logout(ctx context.Context) error {

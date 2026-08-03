@@ -56,6 +56,8 @@ argus destroy [project]            Destroy a project
 
 `ls`, `activity`, and `rm` are aliases for `list`, `history`, and `remove`.
 
+`argus auth` copies GitHub's one-time code to the clipboard, waits for Enter, and opens the verification page in the default browser. If desktop integration is unavailable, it prints manual instructions instead.
+
 ## Safe fetches
 
 When `argus get` encounters a non-empty `.env`, it moves the existing file to a timestamped backup before installing the fetched environment:
