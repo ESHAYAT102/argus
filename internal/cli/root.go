@@ -103,6 +103,16 @@ func requireEnvironment(command *cobra.Command, args []string) error {
 	return nil
 }
 
+func requireProject(command *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return argumentError(command, "missing project name")
+	}
+	if len(args) > 1 {
+		return argumentError(command, "too many arguments: "+quotedArguments(args[1:]))
+	}
+	return nil
+}
+
 func setArgs(command *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return argumentError(command, "missing variable name")
@@ -389,8 +399,8 @@ func (app *application) removeCommand() *cobra.Command {
 }
 
 func (app *application) destroyCommand() *cobra.Command {
-	return &cobra.Command{Use: "destroy [project]", Short: "Permanently destroy a project", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
-		_, metadata, err := app.destroyTarget(command.Context(), args)
+	return &cobra.Command{Use: "destroy <project>", Short: "Permanently destroy a project", Example: "  argus destroy portfolio", Args: requireProject, RunE: func(command *cobra.Command, args []string) error {
+		metadata, err := app.destroyTarget(command.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -413,20 +423,17 @@ func (app *application) destroyCommand() *cobra.Command {
 	}}
 }
 
-func (app *application) destroyTarget(ctx context.Context, args []string) (string, config.Project, error) {
-	if len(args) == 0 {
-		return app.projectContext(ctx, false)
-	}
+func (app *application) destroyTarget(ctx context.Context, name string) (config.Project, error) {
 	projects, err := app.client.List(ctx)
 	if err != nil {
-		return "", config.Project{}, err
+		return config.Project{}, err
 	}
 	for _, candidate := range projects {
-		if candidate.Name == args[0] {
-			return "", config.Project{ProjectID: candidate.ID, ProjectName: candidate.Name}, nil
+		if strings.EqualFold(candidate.Name, name) {
+			return config.Project{ProjectID: candidate.ID, ProjectName: candidate.Name}, nil
 		}
 	}
-	return "", config.Project{}, fmt.Errorf("project %q was not found", args[0])
+	return config.Project{}, fmt.Errorf("project %q was not found", name)
 }
 
 func (app *application) projectContext(ctx context.Context, allowLookup bool) (string, config.Project, error) {

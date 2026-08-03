@@ -51,7 +51,7 @@ argus set <variable> [value]       Update one variable
 argus list                         List projects and environments
 argus history                      Show activity
 argus remove <environment>         Remove an environment
-argus destroy [project]            Destroy a project
+argus destroy <project>            Destroy a project by name
 ```
 
 `ls`, `activity`, and `rm` are aliases for `list`, `history`, and `remove`.

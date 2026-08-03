@@ -66,6 +66,33 @@ func TestSetMissingVariableError(t *testing.T) {
 	}
 }
 
+func TestDestroyRequiresProjectName(t *testing.T) {
+	app := &application{}
+	command := app.destroyCommand()
+	if err := command.Args(command, nil); err == nil || !strings.Contains(err.Error(), "missing project name") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDestroyTargetDoesNotUseCurrentDirectory(t *testing.T) {
+	client := &projectListClient{projects: []api.Project{{ID: "project-id", Name: "portfolio"}}}
+	app := &application{
+		client: client,
+		cwd: func() (string, error) {
+			t.Fatal("destroy should not inspect the current directory")
+			return "", nil
+		},
+	}
+
+	metadata, err := app.destroyTarget(context.Background(), "Portfolio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.ProjectID != "project-id" || metadata.ProjectName != "portfolio" {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+}
+
 func TestPrintErrorUsesReadablePrefix(t *testing.T) {
 	var output bytes.Buffer
 	app := &application{errOut: &output}
