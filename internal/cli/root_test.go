@@ -17,6 +17,7 @@ type authenticationClient struct {
 	user              api.User
 	whoamiErr         error
 	authenticateCalls int
+	logoutCalls       int
 }
 
 type projectListClient struct {
@@ -34,6 +35,11 @@ func (client *authenticationClient) WhoAmI(context.Context) (api.User, error) {
 
 func (client *authenticationClient) Authenticate(context.Context) error {
 	client.authenticateCalls++
+	return nil
+}
+
+func (client *authenticationClient) Logout(context.Context) error {
+	client.logoutCalls++
 	return nil
 }
 
@@ -95,14 +101,21 @@ func TestDestroyTargetDoesNotUseCurrentDirectory(t *testing.T) {
 
 func TestListShowsEmptyState(t *testing.T) {
 	var output bytes.Buffer
-	app := &application{client: &projectListClient{}, out: &output}
+	app := &application{
+		client: &projectListClient{},
+		out:    &output,
+		cwd: func() (string, error) {
+			t.Fatal("list should not inspect the current directory")
+			return "", nil
+		},
+	}
 	command := app.listCommand()
 
 	if err := command.RunE(command, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	want := "No projects found. Run `argus init` in a repository to create one.\n"
+	want := "No projects found in your Argus account.\n"
 	if output.String() != want {
 		t.Fatalf("output = %q, want %q", output.String(), want)
 	}
@@ -146,6 +159,41 @@ func TestAuthDoesNotAuthenticateTwice(t *testing.T) {
 	}
 	if got := output.String(); got != "Already authenticated as octocat.\n" {
 		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestAuthDoesNotInspectCurrentDirectory(t *testing.T) {
+	client := &authenticationClient{user: api.User{Username: "octocat"}}
+	app := &application{
+		client: client,
+		out:    &bytes.Buffer{},
+		cwd: func() (string, error) {
+			t.Fatal("auth should not inspect the current directory")
+			return "", nil
+		},
+	}
+	command := app.authCommand()
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLogoutDoesNotInspectCurrentDirectory(t *testing.T) {
+	client := &authenticationClient{}
+	app := &application{
+		client: client,
+		out:    &bytes.Buffer{},
+		cwd: func() (string, error) {
+			t.Fatal("logout should not inspect the current directory")
+			return "", nil
+		},
+	}
+	command := app.logoutCommand()
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	if client.logoutCalls != 1 {
+		t.Fatalf("Logout called %d times", client.logoutCalls)
 	}
 }
 
