@@ -52,7 +52,7 @@ argus status                       Show local/remote synchronization status
 argus diff <environment>           Compare variable names without showing values
 argus delete <variable>            Delete a variable locally and remotely
 argus project link <project> [env] Link this directory to an existing project
-argus project share <project> <user> Invite a GitHub user
+argus share <project> <user>         Invite a GitHub user
 argus project members <project>      List project members and roles
 argus project role <project> <user> <role> Change a member's role
 argus project unshare <project> <user> Remove project access
@@ -78,8 +78,8 @@ argus destroy <project>            Destroy a project by name
 Project owners and admins can invite collaborators by GitHub username. Invitations expire after seven days and do not grant access until the recipient explicitly accepts:
 
 ```bash
-argus project share portfolio octocat
-argus project share portfolio octocat --role viewer
+argus share portfolio octocat
+argus share portfolio octocat --role viewer
 argus invites
 argus invites accept <invitation-id>
 ```

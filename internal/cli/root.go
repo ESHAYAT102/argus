@@ -64,7 +64,7 @@ func (app *application) rootCommand() *cobra.Command {
   argus push prod
   argus pull dev
   argus set DATABASE_URL
-  argus project share portfolio octocat
+  argus share portfolio octocat
   argus project members portfolio
   argus invites
   argus invites accept <id>`,
@@ -82,7 +82,7 @@ func (app *application) rootCommand() *cobra.Command {
 		&cobra.Group{ID: "help", Title: "Help Commands:"},
 	)
 	accountCommands := []*cobra.Command{app.authCommand(), app.whoamiCommand(), app.logoutCommand()}
-	projectCommands := []*cobra.Command{app.initCommand(), app.projectCommand(), app.listCommand(), app.invitesCommand(), app.destroyCommand()}
+	projectCommands := []*cobra.Command{app.initCommand(), app.projectCommand(), app.shareCommand(), app.listCommand(), app.invitesCommand(), app.destroyCommand()}
 	environmentCommands := []*cobra.Command{app.pushCommand(), app.pullCommand(), app.statusCommand(), app.diffCommand(), app.removeCommand()}
 	variableCommands := []*cobra.Command{app.setCommand(), app.deleteCommand()}
 	activityCommands := []*cobra.Command{app.historyCommand()}
@@ -545,8 +545,16 @@ func (app *application) projectCommand() *cobra.Command {
 }
 
 func (app *application) projectShareCommand() *cobra.Command {
+	return app.newShareCommand("share <project> <github-user>")
+}
+
+func (app *application) shareCommand() *cobra.Command {
+	return app.newShareCommand("share <project> <github-user>")
+}
+
+func (app *application) newShareCommand(use string) *cobra.Command {
 	role := ""
-	command := &cobra.Command{Use: "share <project> <github-user>", Short: "Invite a GitHub user to a project", Example: "  argus project share portfolio octocat\n  argus project share portfolio octocat --role viewer", Args: exactArguments(2, "project name and GitHub username are required"), RunE: func(command *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: use, Short: "Invite a GitHub user to a project", Example: "  argus share portfolio octocat\n  argus share portfolio octocat --role viewer", Args: exactArguments(2, "project name and GitHub username are required"), RunE: func(command *cobra.Command, args []string) error {
 		metadata, err := app.destroyTarget(command.Context(), args[0])
 		if err != nil {
 			return err
