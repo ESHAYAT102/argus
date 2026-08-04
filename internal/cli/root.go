@@ -337,12 +337,21 @@ func (app *application) pushCommand() *cobra.Command {
 }
 
 func (app *application) pullCommand() *cobra.Command {
-	return &cobra.Command{Use: "pull <environment>", Short: "Pull an environment into .env", Example: "  argus pull dev\n  argus pull prod", Args: requireEnvironment, RunE: func(command *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "pull [environment]", Short: "Pull an environment into .env", Example: "  argus pull\n  argus pull dev\n  argus pull prod", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
 		directory, metadata, err := app.projectContext(command.Context(), true)
 		if err != nil {
 			return err
 		}
-		values, err := app.client.Get(command.Context(), metadata.ProjectID, args[0])
+		environment := ""
+		if len(args) == 1 {
+			environment = args[0]
+		} else {
+			environment, err = app.onlyProjectEnvironment(command.Context(), metadata)
+			if err != nil {
+				return err
+			}
+		}
+		values, err := app.client.Get(command.Context(), metadata.ProjectID, environment)
 		if err != nil {
 			return err
 		}
@@ -350,7 +359,7 @@ func (app *application) pullCommand() *cobra.Command {
 		local, localErr := dotenv.Read(directory)
 		if localErr == nil && metadata.Environment != "" {
 			activeRemote := values
-			if !strings.EqualFold(metadata.Environment, args[0]) {
+			if !strings.EqualFold(metadata.Environment, environment) {
 				activeRemote, err = app.client.Inspect(command.Context(), metadata.ProjectID, metadata.Environment)
 				if err != nil && !errors.Is(err, api.ErrNotFound) {
 					return err
@@ -370,16 +379,42 @@ func (app *application) pullCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		metadata.Environment = args[0]
+		metadata.Environment = environment
 		if err := config.Save(directory, metadata); err != nil {
 			return err
 		}
 		if backup != "" {
 			fmt.Fprintf(app.out, "Backup created: %s\n", filepath.Base(backup))
 		}
-		fmt.Fprintf(app.out, "%s Pulled %s from %s. %d variables written to .env.\n", ui.Success.Render("✓"), args[0], metadata.ProjectName, len(values))
+		fmt.Fprintf(app.out, "%s Pulled %s from %s. %d variables written to .env.\n", ui.Success.Render("✓"), environment, metadata.ProjectName, len(values))
 		return nil
 	}}
+}
+
+func (app *application) onlyProjectEnvironment(ctx context.Context, metadata config.Project) (string, error) {
+	projects, err := app.client.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, candidate := range projects {
+		if candidate.ID != metadata.ProjectID {
+			continue
+		}
+		switch len(candidate.Environments) {
+		case 0:
+			return "", fmt.Errorf("project %q has no environments", metadata.ProjectName)
+		case 1:
+			return candidate.Environments[0].Name, nil
+		default:
+			names := make([]string, 0, len(candidate.Environments))
+			for _, environment := range candidate.Environments {
+				names = append(names, environment.Name)
+			}
+			sort.Strings(names)
+			return "", fmt.Errorf("project %q has multiple environments; specify one: %s", metadata.ProjectName, strings.Join(names, ", "))
+		}
+	}
+	return "", fmt.Errorf("project %q was not found", metadata.ProjectName)
 }
 
 func (app *application) setCommand() *cobra.Command {

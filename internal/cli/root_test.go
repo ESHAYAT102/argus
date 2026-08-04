@@ -43,6 +43,7 @@ type deletionClient struct {
 type pullClient struct {
 	api.Client
 	environments map[string]map[string]string
+	projects     []api.Project
 }
 
 type sharingClient struct {
@@ -68,6 +69,8 @@ func (client *pullClient) Get(_ context.Context, _, environment string) (map[str
 func (client *pullClient) Inspect(_ context.Context, _, environment string) (map[string]string, error) {
 	return client.environments[environment], nil
 }
+
+func (client *pullClient) List(context.Context) ([]api.Project, error) { return client.projects, nil }
 
 func (client *deletionClient) DeleteVariable(context.Context, string, string, string) error {
 	client.called = true
@@ -96,20 +99,44 @@ func (client *authenticationClient) Logout(context.Context) error {
 	return nil
 }
 
-func TestPullMissingEnvironmentError(t *testing.T) {
+func TestPullRejectsTooManyEnvironments(t *testing.T) {
 	app := &application{}
 	root := app.rootCommand()
 	command, _, err := root.Find([]string{"pull"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = command.Args(command, nil)
+	err = command.Args(command, []string{"dev", "prod"})
 	if err == nil {
-		t.Fatal("expected missing environment to fail")
+		t.Fatal("expected extra environment to fail")
 	}
-	want := "missing environment name\n\nUsage:\n  argus pull <environment>\n\nExamples:\n  argus pull dev\n  argus pull prod"
-	if err.Error() != want {
-		t.Fatalf("error:\n%s\n\nwant:\n%s", err, want)
+	if !strings.Contains(err.Error(), "too many arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPullAutomaticallyUsesOnlyEnvironment(t *testing.T) {
+	t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+	directory := t.TempDir()
+	if err := config.Save(directory, config.Project{ProjectID: "project-id", ProjectName: "demo"}); err != nil {
+		t.Fatal(err)
+	}
+	client := &pullClient{
+		environments: map[string]map[string]string{"prod": {"MODE": "production"}},
+		projects:     []api.Project{{ID: "project-id", Name: "demo", Environments: []api.Environment{{Name: "prod"}}}},
+	}
+	var output bytes.Buffer
+	app := &application{client: client, out: &output, cwd: func() (string, error) { return directory, nil }, now: time.Now}
+	command := app.pullCommand()
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Pulled prod from demo") {
+		t.Fatalf("output = %q", output.String())
+	}
+	values, err := dotenv.Read(directory)
+	if err != nil || values["MODE"] != "production" {
+		t.Fatalf("values=%#v err=%v", values, err)
 	}
 }
 

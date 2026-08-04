@@ -46,7 +46,7 @@ argus whoami                       Show the authenticated GitHub username
 argus logout                       Log out
 argus init [environment]           Create a project and push .env
 argus push [environment]           Push .env
-argus pull <environment>           Pull into .env
+argus pull [environment]           Pull into .env; auto-select the only environment
 argus set <variable> [value]       Update one variable
 argus status                       Show local/remote synchronization status
 argus diff <environment>           Compare variable names without showing values
