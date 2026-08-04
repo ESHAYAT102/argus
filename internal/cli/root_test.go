@@ -449,6 +449,34 @@ func TestRootHelpShowsSharingWorkflow(t *testing.T) {
 	}
 }
 
+func TestRootHelpGroupsCommandsByWorkflow(t *testing.T) {
+	var output bytes.Buffer
+	app := &application{out: &output, errOut: &output}
+	root := app.rootCommand()
+	root.SetArgs([]string{"help"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	help := output.String()
+	for _, heading := range []string{"Account Commands:", "Project & Collaboration Commands:", "Environment Commands:", "Variable Commands:", "Activity Commands:", "Help Commands:"} {
+		if !strings.Contains(help, heading) {
+			t.Fatalf("help does not contain category %q:\n%s", heading, help)
+		}
+	}
+	commands := []string{"auth", "whoami", "logout", "init", "project", "list", "invites", "destroy", "push", "pull", "status", "diff", "remove", "set", "delete", "history"}
+	previous := -1
+	for _, name := range commands {
+		position := strings.Index(help, "  "+name)
+		if position == -1 {
+			t.Fatalf("help does not contain command %q:\n%s", name, help)
+		}
+		if position <= previous {
+			t.Fatalf("command %q is out of workflow order:\n%s", name, help)
+		}
+		previous = position
+	}
+}
+
 func TestAuthDoesNotAuthenticateTwice(t *testing.T) {
 	var output bytes.Buffer
 	client := &authenticationClient{user: api.User{Username: "octocat"}}

@@ -53,6 +53,7 @@ func Execute() error {
 }
 
 func (app *application) rootCommand() *cobra.Command {
+	cobra.EnableCommandSorting = false
 	root := &cobra.Command{
 		Use:           "argus",
 		Short:         "Keep watch over your environment variables",
@@ -72,14 +73,40 @@ func (app *application) rootCommand() *cobra.Command {
 	root.SetOut(app.out)
 	root.SetErr(app.errOut)
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.AddCommand(
-		app.authCommand(), app.whoamiCommand(), app.logoutCommand(), app.initCommand(),
-		app.pushCommand(), app.pullCommand(), app.setCommand(),
-		app.statusCommand(), app.diffCommand(), app.deleteCommand(), app.projectCommand(),
-		app.invitesCommand(),
-		app.listCommand(), app.historyCommand(), app.removeCommand(),
-		app.destroyCommand(),
+	root.AddGroup(
+		&cobra.Group{ID: "account", Title: "Account Commands:"},
+		&cobra.Group{ID: "projects", Title: "Project & Collaboration Commands:"},
+		&cobra.Group{ID: "environments", Title: "Environment Commands:"},
+		&cobra.Group{ID: "variables", Title: "Variable Commands:"},
+		&cobra.Group{ID: "activity", Title: "Activity Commands:"},
+		&cobra.Group{ID: "help", Title: "Help Commands:"},
 	)
+	accountCommands := []*cobra.Command{app.authCommand(), app.whoamiCommand(), app.logoutCommand()}
+	projectCommands := []*cobra.Command{app.initCommand(), app.projectCommand(), app.listCommand(), app.invitesCommand(), app.destroyCommand()}
+	environmentCommands := []*cobra.Command{app.pushCommand(), app.pullCommand(), app.statusCommand(), app.diffCommand(), app.removeCommand()}
+	variableCommands := []*cobra.Command{app.setCommand(), app.deleteCommand()}
+	activityCommands := []*cobra.Command{app.historyCommand()}
+	for _, command := range accountCommands {
+		command.GroupID = "account"
+	}
+	for _, command := range projectCommands {
+		command.GroupID = "projects"
+	}
+	for _, command := range environmentCommands {
+		command.GroupID = "environments"
+	}
+	for _, command := range variableCommands {
+		command.GroupID = "variables"
+	}
+	for _, command := range activityCommands {
+		command.GroupID = "activity"
+	}
+	root.SetHelpCommandGroupID("help")
+	root.AddCommand(accountCommands...)
+	root.AddCommand(projectCommands...)
+	root.AddCommand(environmentCommands...)
+	root.AddCommand(variableCommands...)
+	root.AddCommand(activityCommands...)
 	return root
 }
 
