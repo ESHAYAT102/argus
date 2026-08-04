@@ -157,6 +157,56 @@ func RemoveProject(projectID string) error {
 	return writeRegistry(contents)
 }
 
+// RenameProject updates the cached name in every directory linked to projectID.
+func RenameProject(projectID, newName string) error {
+	if projectID == "" || strings.TrimSpace(newName) == "" {
+		return errors.New("project id and new name are required")
+	}
+	contents, err := loadRegistry()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	changed := false
+	for index := range contents.Projects {
+		if contents.Projects[index].ProjectID == projectID {
+			contents.Projects[index].ProjectName = newName
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writeRegistry(contents)
+}
+
+// RenameEnvironment updates active environment names for all linked directories.
+func RenameEnvironment(projectID, oldName, newName string) error {
+	if projectID == "" || oldName == "" || strings.TrimSpace(newName) == "" {
+		return errors.New("project id, old environment, and new environment are required")
+	}
+	contents, err := loadRegistry()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	changed := false
+	for index := range contents.Projects {
+		if contents.Projects[index].ProjectID == projectID && contents.Projects[index].Environment == oldName {
+			contents.Projects[index].Environment = newName
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writeRegistry(contents)
+}
+
 func loadRegistry() (registry, error) {
 	path, err := Path()
 	if err != nil {

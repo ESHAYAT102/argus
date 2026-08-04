@@ -133,3 +133,28 @@ func TestRemoveProjectRemovesEveryMatchingDirectory(t *testing.T) {
 		t.Fatalf("unrelated mapping was removed: %v", err)
 	}
 }
+
+func TestRenameUpdatesEveryMatchingDirectory(t *testing.T) {
+	t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+	firstDirectory, secondDirectory := t.TempDir(), t.TempDir()
+	for _, directory := range []string{firstDirectory, secondDirectory} {
+		if err := Save(directory, Project{ProjectID: "shared", ProjectName: "old-project", Environment: "dev"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RenameProject("shared", "new-project"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RenameEnvironment("shared", "dev", "development"); err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{firstDirectory, secondDirectory} {
+		project, err := Load(directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if project.ProjectName != "new-project" || project.Environment != "development" {
+			t.Fatalf("project = %#v", project)
+		}
+	}
+}

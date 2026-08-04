@@ -117,6 +117,12 @@ func TestProjectAccessRequests(t *testing.T) {
 		{name: "invites", method: http.MethodGet, path: "/v1/invitations", call: func(client *HTTPClient) error { _, err := client.Invitations(context.Background()); return err }},
 		{name: "accept", method: http.MethodPost, path: "/v1/invitations/invite/accept", call: func(client *HTTPClient) error { return client.AcceptInvitation(context.Background(), "invite") }},
 		{name: "decline", method: http.MethodPost, path: "/v1/invitations/invite/decline", call: func(client *HTTPClient) error { return client.DeclineInvitation(context.Background(), "invite") }},
+		{name: "rename project", method: http.MethodPatch, path: "/v1/projects/project", call: func(client *HTTPClient) error {
+			return client.RenameProject(context.Background(), "project", "new-name")
+		}},
+		{name: "rename environment", method: http.MethodPatch, path: "/v1/projects/project/environments/dev", call: func(client *HTTPClient) error {
+			return client.RenameEnvironment(context.Background(), "project", "dev", "development")
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

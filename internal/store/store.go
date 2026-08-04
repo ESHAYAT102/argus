@@ -375,6 +375,29 @@ func (store *Store) RemoveEnvironment(ctx context.Context, userID, projectID, en
 	return tx.Commit(ctx)
 }
 
+func (store *Store) RenameEnvironment(ctx context.Context, userID, projectID, environment, newName string) error {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = authorizeWrite(ctx, tx, userID, projectID); err != nil {
+		return err
+	}
+	var environmentID string
+	err = tx.QueryRow(ctx, `UPDATE environments SET name=$1,updated_at=now() WHERE project_id=$2 AND name=$3 RETURNING id`, newName, projectID, environment).Scan(&environmentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO activity_events(project_id,environment_id,actor_id,action,metadata) VALUES($1,$2,$3,'environment.renamed',jsonb_build_object('from',$4::text,'to',$5::text))`, projectID, environmentID, userID, environment, newName); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (store *Store) DestroyProject(ctx context.Context, userID, projectID string) error {
 	result, err := store.db.Exec(ctx, `DELETE FROM projects WHERE id=$1 AND owner_id=$2`, projectID, userID)
 	if err != nil {
@@ -384,6 +407,32 @@ func (store *Store) DestroyProject(ctx context.Context, userID, projectID string
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (store *Store) RenameProject(ctx context.Context, userID, projectID, newName string) error {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	role, err := memberRole(ctx, tx, userID, projectID)
+	if err != nil {
+		return err
+	}
+	if role != "owner" && role != "admin" {
+		return ErrForbidden
+	}
+	result, err := tx.Exec(ctx, `UPDATE projects SET name=$1,updated_at=now() WHERE id=$2`, newName, projectID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO activity_events(project_id,actor_id,action,metadata) VALUES($1,$2,'project.renamed',jsonb_build_object('to',$3::text))`, projectID, userID, newName); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (store *Store) putVariable(ctx context.Context, tx pgx.Tx, userID, environmentID, name, value string) (bool, error) {

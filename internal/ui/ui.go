@@ -56,6 +56,8 @@ func activityPresentation(action string) (charmlog.Level, string) {
 	switch action {
 	case "project.initialized":
 		return charmlog.InfoLevel, "Project initialized ✨"
+	case "project.renamed":
+		return charmlog.WarnLevel, "Project renamed ◆"
 	case "environment.created":
 		return charmlog.InfoLevel, "Environment created 🌱"
 	case "environment.pushed":
@@ -64,6 +66,8 @@ func activityPresentation(action string) (charmlog.Level, string) {
 		return charmlog.DebugLevel, "Environment fetched ↓"
 	case "environment.pulled":
 		return charmlog.DebugLevel, "Environment pulled ↓"
+	case "environment.renamed":
+		return charmlog.WarnLevel, "Environment renamed ◆"
 	case "environment.removed":
 		return charmlog.ErrorLevel, "Environment removed ✕"
 	case "variable.added":

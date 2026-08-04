@@ -209,8 +209,17 @@ func (client *HTTPClient) RemoveEnvironment(ctx context.Context, projectID, envi
 	return client.request(ctx, http.MethodDelete, path, nil, nil, true)
 }
 
+func (client *HTTPClient) RenameEnvironment(ctx context.Context, projectID, environment, newName string) error {
+	path := fmt.Sprintf("/v1/projects/%s/environments/%s", url.PathEscape(projectID), url.PathEscape(environment))
+	return client.request(ctx, http.MethodPatch, path, map[string]string{"name": newName}, nil, true)
+}
+
 func (client *HTTPClient) DestroyProject(ctx context.Context, projectID string) error {
 	return client.request(ctx, http.MethodDelete, "/v1/projects/"+url.PathEscape(projectID), nil, nil, true)
+}
+
+func (client *HTTPClient) RenameProject(ctx context.Context, projectID, newName string) error {
+	return client.request(ctx, http.MethodPatch, "/v1/projects/"+url.PathEscape(projectID), map[string]string{"name": newName}, nil, true)
 }
 
 func (client *HTTPClient) ShareProject(ctx context.Context, projectID, username, role string) (Invitation, error) {

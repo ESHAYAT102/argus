@@ -67,7 +67,9 @@ type Client interface {
 	List(ctx context.Context) ([]Project, error)
 	History(ctx context.Context, projectID string) ([]Activity, error)
 	RemoveEnvironment(ctx context.Context, projectID, environment string) error
+	RenameEnvironment(ctx context.Context, projectID, environment, newName string) error
 	DestroyProject(ctx context.Context, projectID string) error
+	RenameProject(ctx context.Context, projectID, newName string) error
 	ShareProject(ctx context.Context, projectID, username, role string) (Invitation, error)
 	Members(ctx context.Context, projectID string) ([]Member, error)
 	UpdateMemberRole(ctx context.Context, projectID, username, role string) error

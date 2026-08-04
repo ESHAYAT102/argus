@@ -47,11 +47,13 @@ argus logout                       Log out
 argus init [environment]           Create a project and push .env
 argus push [environment]           Push .env
 argus pull [environment]           Pull into .env; auto-select the only environment
+argus rename <environment> <new-name> Rename an environment
 argus set <variable> [value]       Update one variable
 argus status                       Show local/remote synchronization status
 argus diff <environment>           Compare variable names without showing values
 argus delete <variable>            Delete a variable locally and remotely
 argus project link <project> [env] Link this directory to an existing project
+argus project rename <project> <new-name> Rename a project
 argus share <project> <user>         Invite a GitHub user
 argus project members <project>      List project members and roles
 argus project role <project> <user> <role> Change a member's role
@@ -72,6 +74,8 @@ argus destroy <project>            Destroy a project by name
 `argus status` compares `.env` with the active environment. `argus diff` shows only variable names marked as local-only, changed, or remote-only; secret values are never printed. These comparisons do not create fetch entries in project history.
 
 `argus delete` requires confirmation and removes the variable remotely before updating `.env`. `argus project link` stores the association in the user-wide registry below, never inside the project. When a project has multiple environments and none is supplied, Argus presents an environment picker.
+
+`argus rename <environment> <new-name>` renames an environment in the current project. `argus project rename <project> <new-name>` renames a project. Successful renames update every matching entry in the user-wide registry and are recorded in activity history.
 
 ## Sharing projects
 

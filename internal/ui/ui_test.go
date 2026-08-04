@@ -59,6 +59,15 @@ func TestInvitationsTable(t *testing.T) {
 	}
 }
 
+func TestRenameActivityPresentation(t *testing.T) {
+	for _, action := range []string{"project.renamed", "environment.renamed"} {
+		_, message := activityPresentation(action)
+		if !strings.Contains(message, "renamed") {
+			t.Fatalf("action %q message = %q", action, message)
+		}
+	}
+}
+
 func TestProjectsTable(t *testing.T) {
 	var output bytes.Buffer
 	ProjectsTable(&output, []struct{ Name, Environments string }{

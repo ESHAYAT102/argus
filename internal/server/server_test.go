@@ -14,3 +14,15 @@ func TestValidGitHubUsername(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateResourceName(t *testing.T) {
+	if err := validateResourceName("project", "valid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateResourceName("project", ""); err == nil {
+		t.Fatal("expected empty name to fail")
+	}
+	if err := validateResourceName("environment", string(make([]byte, 101))); err == nil {
+		t.Fatal("expected long name to fail")
+	}
+}

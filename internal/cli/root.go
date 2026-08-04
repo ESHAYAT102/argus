@@ -83,7 +83,7 @@ func (app *application) rootCommand() *cobra.Command {
 	)
 	accountCommands := []*cobra.Command{app.authCommand(), app.whoamiCommand(), app.logoutCommand()}
 	projectCommands := []*cobra.Command{app.initCommand(), app.projectCommand(), app.shareCommand(), app.listCommand(), app.invitesCommand(), app.destroyCommand()}
-	environmentCommands := []*cobra.Command{app.pushCommand(), app.pullCommand(), app.statusCommand(), app.diffCommand(), app.removeCommand()}
+	environmentCommands := []*cobra.Command{app.pushCommand(), app.pullCommand(), app.statusCommand(), app.diffCommand(), app.renameEnvironmentCommand(), app.removeCommand()}
 	variableCommands := []*cobra.Command{app.setCommand(), app.deleteCommand()}
 	activityCommands := []*cobra.Command{app.historyCommand()}
 	for _, command := range accountCommands {
@@ -575,8 +575,50 @@ func (app *application) deleteCommand() *cobra.Command {
 
 func (app *application) projectCommand() *cobra.Command {
 	command := &cobra.Command{Use: "project", Short: "Link and share projects; manage members"}
-	command.AddCommand(app.projectLinkCommand(), app.projectShareCommand(), app.projectMembersCommand(), app.projectRoleCommand(), app.projectUnshareCommand())
+	command.AddCommand(app.projectLinkCommand(), app.projectRenameCommand(), app.projectShareCommand(), app.projectMembersCommand(), app.projectRoleCommand(), app.projectUnshareCommand())
 	return command
+}
+
+func (app *application) projectRenameCommand() *cobra.Command {
+	return &cobra.Command{Use: "rename <project> <new-name>", Short: "Rename a project", Example: "  argus project rename portfolio website", Args: exactArguments(2, "project and new name are required"), RunE: func(command *cobra.Command, args []string) error {
+		newName := strings.TrimSpace(args[1])
+		if newName == "" {
+			return errors.New("new project name is required")
+		}
+		metadata, err := app.destroyTarget(command.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		if err := app.client.RenameProject(command.Context(), metadata.ProjectID, newName); err != nil {
+			return err
+		}
+		if err := config.RenameProject(metadata.ProjectID, newName); err != nil {
+			return fmt.Errorf("project was renamed remotely, but local registry update failed: %w", err)
+		}
+		fmt.Fprintf(app.out, "%s Renamed project %s to %s.\n", ui.Success.Render("✓"), metadata.ProjectName, newName)
+		return nil
+	}}
+}
+
+func (app *application) renameEnvironmentCommand() *cobra.Command {
+	return &cobra.Command{Use: "rename <environment> <new-name>", Short: "Rename an environment", Example: "  argus rename staging preview", Args: exactArguments(2, "environment and new name are required"), RunE: func(command *cobra.Command, args []string) error {
+		newName := strings.TrimSpace(args[1])
+		if newName == "" {
+			return errors.New("new environment name is required")
+		}
+		_, metadata, err := app.projectContext(command.Context(), false)
+		if err != nil {
+			return err
+		}
+		if err := app.client.RenameEnvironment(command.Context(), metadata.ProjectID, args[0], newName); err != nil {
+			return err
+		}
+		if err := config.RenameEnvironment(metadata.ProjectID, args[0], newName); err != nil {
+			return fmt.Errorf("environment was renamed remotely, but local registry update failed: %w", err)
+		}
+		fmt.Fprintf(app.out, "%s Renamed environment %s to %s.\n", ui.Success.Render("✓"), args[0], newName)
+		return nil
+	}}
 }
 
 func (app *application) projectShareCommand() *cobra.Command {

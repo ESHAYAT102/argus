@@ -135,7 +135,13 @@ func TestStoreLifecycle(t *testing.T) {
 	if err != nil || len(events) < 6 {
 		t.Fatalf("events=%d err=%v", len(events), err)
 	}
-	if err := data.RemoveEnvironment(ctx, userID, project.ID, "dev"); err != nil {
+	if err := data.RenameEnvironment(ctx, userID, project.ID, "dev", "development"); err != nil {
+		t.Fatal(err)
+	}
+	if err := data.RemoveEnvironment(ctx, userID, project.ID, "development"); err != nil {
+		t.Fatal(err)
+	}
+	if err := data.RenameProject(ctx, userID, project.ID, "integration-project-renamed"); err != nil {
 		t.Fatal(err)
 	}
 	if err := data.DestroyProject(ctx, userID, project.ID); err != nil {

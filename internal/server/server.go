@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -39,6 +40,7 @@ func New(database *pgxpool.Pool, data *store.Store, github *githubauth.Client) h
 	mux.Handle("POST /v1/projects", server.auth(http.HandlerFunc(server.initProject)))
 	mux.Handle("GET /v1/projects", server.auth(http.HandlerFunc(server.listProjects)))
 	mux.Handle("DELETE /v1/projects/{project}", server.auth(http.HandlerFunc(server.destroyProject)))
+	mux.Handle("PATCH /v1/projects/{project}", server.auth(http.HandlerFunc(server.renameProject)))
 	mux.Handle("POST /v1/projects/{project}/invitations", server.auth(http.HandlerFunc(server.inviteMember)))
 	mux.Handle("GET /v1/projects/{project}/members", server.auth(http.HandlerFunc(server.members)))
 	mux.Handle("PATCH /v1/projects/{project}/members/{username}", server.auth(http.HandlerFunc(server.updateMemberRole)))
@@ -52,6 +54,7 @@ func New(database *pgxpool.Pool, data *store.Store, github *githubauth.Client) h
 	mux.Handle("PUT /v1/projects/{project}/environments/{environment}/variables/{variable}", server.auth(http.HandlerFunc(server.setVariable)))
 	mux.Handle("DELETE /v1/projects/{project}/environments/{environment}/variables/{variable}", server.auth(http.HandlerFunc(server.deleteVariable)))
 	mux.Handle("DELETE /v1/projects/{project}/environments/{environment}", server.auth(http.HandlerFunc(server.removeEnvironment)))
+	mux.Handle("PATCH /v1/projects/{project}/environments/{environment}", server.auth(http.HandlerFunc(server.renameEnvironment)))
 	mux.Handle("GET /v1/activity", server.auth(http.HandlerFunc(server.history)))
 	return recoverer(securityHeaders(mux))
 }
@@ -250,6 +253,26 @@ func (server *Server) removeEnvironment(writer http.ResponseWriter, request *htt
 	writer.WriteHeader(http.StatusNoContent)
 }
 
+func (server *Server) renameEnvironment(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := decode(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if err := validateResourceName("environment", input.Name); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := server.store.RenameEnvironment(request.Context(), userID(request), request.PathValue("project"), request.PathValue("environment"), input.Name); err != nil {
+		problem(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
 func (server *Server) destroyProject(writer http.ResponseWriter, request *http.Request) {
 	err := server.store.DestroyProject(request.Context(), userID(request), request.PathValue("project"))
 	if err != nil {
@@ -257,6 +280,36 @@ func (server *Server) destroyProject(writer http.ResponseWriter, request *http.R
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) renameProject(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := decode(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if err := validateResourceName("project", input.Name); err != nil {
+		writeError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := server.store.RenameProject(request.Context(), userID(request), request.PathValue("project"), input.Name); err != nil {
+		problem(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func validateResourceName(kind, name string) error {
+	if name == "" {
+		return errors.New(kind + " name is required")
+	}
+	if len(name) > 100 {
+		return fmt.Errorf("%s name must be 100 characters or fewer", kind)
+	}
+	return nil
 }
 
 func (server *Server) inviteMember(writer http.ResponseWriter, request *http.Request) {

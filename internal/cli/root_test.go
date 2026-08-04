@@ -424,7 +424,7 @@ func TestPullBackupBehavior(t *testing.T) {
 
 func TestWorkflowCommandsAreRegistered(t *testing.T) {
 	root := (&application{}).rootCommand()
-	for _, path := range [][]string{{"status"}, {"diff"}, {"delete"}, {"share"}, {"project", "link"}, {"project", "share"}, {"project", "members"}, {"project", "role"}, {"project", "unshare"}, {"invites"}, {"invites", "accept"}, {"invites", "decline"}} {
+	for _, path := range [][]string{{"status"}, {"diff"}, {"delete"}, {"rename"}, {"share"}, {"project", "link"}, {"project", "rename"}, {"project", "share"}, {"project", "members"}, {"project", "role"}, {"project", "unshare"}, {"invites"}, {"invites", "accept"}, {"invites", "decline"}} {
 		command, _, err := root.Find(path)
 		if err != nil || command.Name() != path[len(path)-1] {
 			t.Fatalf("command %v was not registered: command=%v err=%v", path, command, err)
@@ -490,7 +490,7 @@ func TestRootHelpGroupsCommandsByWorkflow(t *testing.T) {
 			t.Fatalf("help does not contain category %q:\n%s", heading, help)
 		}
 	}
-	commands := []string{"auth", "whoami", "logout", "init", "project", "share", "list", "invites", "destroy", "push", "pull", "status", "diff", "remove", "set", "delete", "history"}
+	commands := []string{"auth", "whoami", "logout", "init", "project", "share", "list", "invites", "destroy", "push", "pull", "status", "diff", "rename", "remove", "set", "delete", "history"}
 	previous := -1
 	for _, name := range commands {
 		position := strings.Index(help, "  "+name)
