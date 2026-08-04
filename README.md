@@ -89,12 +89,22 @@ argus invites
 argus invites accept <invitation-id>
 ```
 
-If `--role` is omitted, Argus presents a role picker. Roles are enforced by the API:
+If `--role` is omitted, Argus presents a role picker. Permissions are enforced by the API, not only by the CLI:
 
-- `viewer` can list, pull, inspect differences, and view history.
-- `member` can also push and change environments and variables.
-- `admin` can also invite, remove, and change the roles of members and viewers.
-- `owner` has complete control, including admin management and project destruction. Ownership cannot be granted, removed, or demoted through sharing commands.
+| Capability | Viewer | Member | Admin | Owner |
+| --- | :---: | :---: | :---: | :---: |
+| List projects, environments, and members | ✓ | ✓ | ✓ | ✓ |
+| Pull environment variables | ✓ | ✓ | ✓ | ✓ |
+| Run status and diff | ✓ | ✓ | ✓ | ✓ |
+| View project history | ✓ | ✓ | ✓ | ✓ |
+| Push, set, and delete variables | — | ✓ | ✓ | ✓ |
+| Create, rename, and remove environments | — | ✓ | ✓ | ✓ |
+| Invite and manage members or viewers | — | — | ✓ | ✓ |
+| Invite or manage admins | — | — | — | ✓ |
+| Rename the project | — | — | ✓ | ✓ |
+| Destroy the project | — | — | — | ✓ |
+
+In short, viewers have read-only secret access, members can change secrets and environments, admins can manage ordinary collaborators and rename the project, and owners have complete control. Ownership cannot be granted, removed, or demoted through sharing commands.
 
 Manage existing access with `argus project members`, `argus project role`, and `argus project unshare`. A recipient can link an accepted project to a directory with `argus project link`.
 
