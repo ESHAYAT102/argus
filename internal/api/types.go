@@ -71,6 +71,7 @@ type Client interface {
 	DestroyProject(ctx context.Context, projectID string) error
 	RenameProject(ctx context.Context, projectID, newName string) error
 	ShareProject(ctx context.Context, projectID, username, role string) (Invitation, error)
+	ShareProjects(ctx context.Context, projectID string, usernames []string, role string) ([]Invitation, error)
 	Members(ctx context.Context, projectID string) ([]Member, error)
 	UpdateMemberRole(ctx context.Context, projectID, username, role string) error
 	RemoveMember(ctx context.Context, projectID, username string) error

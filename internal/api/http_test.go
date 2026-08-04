@@ -109,6 +109,10 @@ func TestProjectAccessRequests(t *testing.T) {
 			_, err := client.ShareProject(context.Background(), "project", "octocat", "member")
 			return err
 		}},
+		{name: "share batch", method: http.MethodPost, path: "/v1/projects/project/invitations", call: func(client *HTTPClient) error {
+			_, err := client.ShareProjects(context.Background(), "project", []string{"user1", "user2"}, "member")
+			return err
+		}},
 		{name: "members", method: http.MethodGet, path: "/v1/projects/project/members", call: func(client *HTTPClient) error { _, err := client.Members(context.Background(), "project"); return err }},
 		{name: "role", method: http.MethodPatch, path: "/v1/projects/project/members/octocat", call: func(client *HTTPClient) error {
 			return client.UpdateMemberRole(context.Background(), "project", "octocat", "viewer")
@@ -132,6 +136,10 @@ func TestProjectAccessRequests(t *testing.T) {
 				}
 				if test.name == "share" {
 					_, _ = io.WriteString(writer, `{"id":"invite","role":"member","expires_at":"2026-08-11T00:00:00Z"}`)
+					return
+				}
+				if test.name == "share batch" {
+					_, _ = io.WriteString(writer, `{"invitations":[{"id":"invite","role":"member","expires_at":"2026-08-11T00:00:00Z"}]}`)
 					return
 				}
 				if test.name == "members" {

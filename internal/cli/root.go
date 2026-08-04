@@ -180,6 +180,13 @@ func exactArguments(count int, missing string) cobra.PositionalArgs {
 	}
 }
 
+func shareArguments(command *cobra.Command, args []string) error {
+	if len(args) >= 2 {
+		return nil
+	}
+	return argumentError(command, "project name and at least one GitHub username are required\n\nAvailable roles:\n  viewer  Read-only access\n  member  Manage environments and variables\n  admin   Manage members, environments, and variables")
+}
+
 func setArgs(command *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return argumentError(command, "missing variable name")
@@ -622,16 +629,16 @@ func (app *application) renameEnvironmentCommand() *cobra.Command {
 }
 
 func (app *application) projectShareCommand() *cobra.Command {
-	return app.newShareCommand("share <project> <github-user>")
+	return app.newShareCommand("share <project> <github-user>...")
 }
 
 func (app *application) shareCommand() *cobra.Command {
-	return app.newShareCommand("share <project> <github-user>")
+	return app.newShareCommand("share <project> <github-user>...")
 }
 
 func (app *application) newShareCommand(use string) *cobra.Command {
 	role := ""
-	command := &cobra.Command{Use: use, Short: "Invite a GitHub user to a project", Example: "  argus share portfolio octocat\n  argus share portfolio octocat --role viewer", Args: exactArguments(2, "project name and GitHub username are required"), RunE: func(command *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: use, Short: "Invite GitHub users to a project", Long: "Invite one or more GitHub users to a project.\n\nAvailable roles:\n  viewer  Read-only access\n  member  Manage environments and variables\n  admin   Manage members, environments, and variables", Example: "  argus share portfolio octocat\n  argus share portfolio user1 user2 user3\n  argus share portfolio octocat --role viewer", Args: shareArguments, RunE: func(command *cobra.Command, args []string) error {
 		metadata, err := app.destroyTarget(command.Context(), args[0])
 		if err != nil {
 			return err
@@ -646,12 +653,17 @@ func (app *application) newShareCommand(use string) *cobra.Command {
 		if !validMemberRole(selectedRole) {
 			return errors.New("role must be admin, member, or viewer")
 		}
-		username := strings.TrimPrefix(args[1], "@")
-		invitation, err := app.client.ShareProject(command.Context(), metadata.ProjectID, username, selectedRole)
+		usernames := make([]string, 0, len(args)-1)
+		for _, username := range args[1:] {
+			usernames = append(usernames, strings.TrimPrefix(username, "@"))
+		}
+		invitations, err := app.client.ShareProjects(command.Context(), metadata.ProjectID, usernames, selectedRole)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(app.out, "%s Invited @%s to %s as %s. Invitation expires %s.\n", ui.Success.Render("✓"), username, metadata.ProjectName, invitation.Role, invitation.ExpiresAt.Local().Format("Jan 2"))
+		for index, invitation := range invitations {
+			fmt.Fprintf(app.out, "%s Invited @%s to %s as %s. Invitation expires %s.\n", ui.Success.Render("✓"), usernames[index], metadata.ProjectName, invitation.Role, invitation.ExpiresAt.Local().Format("Jan 2"))
+		}
 		return nil
 	}}
 	command.Flags().StringVar(&role, "role", "", "access role: admin, member, or viewer")

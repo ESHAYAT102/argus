@@ -229,6 +229,15 @@ func (client *HTTPClient) ShareProject(ctx context.Context, projectID, username,
 	return invitation, err
 }
 
+func (client *HTTPClient) ShareProjects(ctx context.Context, projectID string, usernames []string, role string) ([]Invitation, error) {
+	var response struct {
+		Invitations []Invitation `json:"invitations"`
+	}
+	path := fmt.Sprintf("/v1/projects/%s/invitations", url.PathEscape(projectID))
+	err := client.request(ctx, http.MethodPost, path, map[string]any{"usernames": usernames, "role": role}, &response, true)
+	return response.Invitations, err
+}
+
 func (client *HTTPClient) Members(ctx context.Context, projectID string) ([]Member, error) {
 	var response struct {
 		Members []Member `json:"members"`

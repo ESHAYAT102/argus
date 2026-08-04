@@ -48,10 +48,10 @@ type pullClient struct {
 
 type sharingClient struct {
 	api.Client
-	projects []api.Project
-	shared   api.Invitation
-	username string
-	role     string
+	projects  []api.Project
+	shared    api.Invitation
+	usernames []string
+	role      string
 }
 
 type historyClient struct {
@@ -72,8 +72,17 @@ func (client *sharingClient) List(context.Context) ([]api.Project, error) {
 	return client.projects, nil
 }
 func (client *sharingClient) ShareProject(_ context.Context, _ string, username, role string) (api.Invitation, error) {
-	client.username, client.role = username, role
+	client.usernames, client.role = []string{username}, role
 	return client.shared, nil
+}
+
+func (client *sharingClient) ShareProjects(_ context.Context, _ string, usernames []string, role string) ([]api.Invitation, error) {
+	client.usernames, client.role = usernames, role
+	invitations := make([]api.Invitation, len(usernames))
+	for index := range invitations {
+		invitations[index] = client.shared
+	}
+	return invitations, nil
 }
 
 func (client *pullClient) Get(_ context.Context, _, environment string) (map[string]string, error) {
@@ -227,11 +236,48 @@ func TestProjectShareWithExplicitRole(t *testing.T) {
 	if err := command.RunE(command, []string{"portfolio", "@octocat"}); err != nil {
 		t.Fatal(err)
 	}
-	if client.username != "octocat" || client.role != "viewer" {
-		t.Fatalf("username=%q role=%q", client.username, client.role)
+	if strings.Join(client.usernames, ",") != "octocat" || client.role != "viewer" {
+		t.Fatalf("usernames=%q role=%q", client.usernames, client.role)
 	}
 	if !strings.Contains(output.String(), "Invited @octocat to portfolio as viewer") {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestProjectShareInvitesMultipleUsers(t *testing.T) {
+	client := &sharingClient{
+		projects: []api.Project{{ID: "project-id", Name: "portfolio"}},
+		shared:   api.Invitation{Role: "member", ExpiresAt: time.Date(2026, 8, 11, 0, 0, 0, 0, time.Local)},
+	}
+	var output bytes.Buffer
+	app := &application{client: client, out: &output}
+	command := app.shareCommand()
+	if err := command.Flags().Set("role", "member"); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.RunE(command, []string{"portfolio", "user1", "@user2", "user3"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(client.usernames, ",") != "user1,user2,user3" {
+		t.Fatalf("usernames = %v", client.usernames)
+	}
+	for _, username := range client.usernames {
+		if !strings.Contains(output.String(), "@"+username) {
+			t.Fatalf("output missing @%s: %s", username, output.String())
+		}
+	}
+}
+
+func TestShareErrorShowsAvailableRoles(t *testing.T) {
+	command := (&application{}).shareCommand()
+	err := command.Args(command, nil)
+	if err == nil {
+		t.Fatal("expected missing arguments to fail")
+	}
+	for _, role := range []string{"viewer", "member", "admin"} {
+		if !strings.Contains(err.Error(), role) {
+			t.Fatalf("error does not mention %s: %v", role, err)
+		}
 	}
 }
 

@@ -54,7 +54,7 @@ argus diff <environment>           Compare variable names without showing values
 argus delete <variable>            Delete a variable locally and remotely
 argus project link <project> [env] Link this directory to an existing project
 argus project rename <project> <new-name> Rename a project
-argus share <project> <user>         Invite a GitHub user
+argus share <project> <user>...      Invite one or more GitHub users
 argus project members <project>      List project members and roles
 argus project role <project> <user> <role> Change a member's role
 argus project unshare <project> <user> Remove project access
@@ -83,6 +83,7 @@ Project owners and admins can invite collaborators by GitHub username. Invitatio
 
 ```bash
 argus share portfolio octocat
+argus share portfolio user1 user2 user3
 argus share portfolio octocat --role viewer
 argus invites
 argus invites accept <invitation-id>

@@ -464,51 +464,65 @@ func authorizeWrite(ctx context.Context, tx pgx.Tx, userID, projectID string) er
 }
 
 func (store *Store) Invite(ctx context.Context, userID, projectID, username, role string) (api.Invitation, error) {
+	invitations, err := store.InviteMany(ctx, userID, projectID, []string{username}, role)
+	if err != nil {
+		return api.Invitation{}, err
+	}
+	return invitations[0], nil
+}
+
+func (store *Store) InviteMany(ctx context.Context, userID, projectID string, usernames []string, role string) ([]api.Invitation, error) {
 	if !validShareRole(role) {
-		return api.Invitation{}, ErrForbidden
+		return nil, ErrForbidden
 	}
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return api.Invitation{}, err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
 	actorRole, err := memberRole(ctx, tx, userID, projectID)
 	if err != nil {
-		return api.Invitation{}, err
+		return nil, err
 	}
 	if actorRole != "owner" && actorRole != "admin" {
-		return api.Invitation{}, ErrForbidden
+		return nil, ErrForbidden
 	}
 	if role == "admin" && actorRole != "owner" {
-		return api.Invitation{}, ErrForbidden
+		return nil, ErrForbidden
 	}
-	var actorLogin string
-	if err = tx.QueryRow(ctx, `SELECT github_login FROM users WHERE id=$1`, userID).Scan(&actorLogin); err != nil {
-		return api.Invitation{}, err
+	var actorLogin, projectName string
+	if err = tx.QueryRow(ctx, `SELECT u.github_login,p.name FROM users u CROSS JOIN projects p WHERE u.id=$1 AND p.id=$2`, userID, projectID).Scan(&actorLogin, &projectName); err != nil {
+		return nil, err
 	}
-	if strings.EqualFold(actorLogin, username) {
-		return api.Invitation{}, ErrConflict
+	invitations := make([]api.Invitation, 0, len(usernames))
+	seen := map[string]bool{}
+	for _, username := range usernames {
+		normalized := strings.ToLower(username)
+		if seen[normalized] || strings.EqualFold(actorLogin, username) {
+			return nil, ErrConflict
+		}
+		seen[normalized] = true
+		var memberExists bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_members m JOIN users u ON u.id=m.user_id WHERE m.project_id=$1 AND lower(u.github_login)=lower($2))`, projectID, username).Scan(&memberExists); err != nil {
+			return nil, err
+		}
+		if memberExists {
+			return nil, ErrConflict
+		}
+		if _, err = tx.Exec(ctx, `UPDATE project_invitations SET status='declined',responded_at=now() WHERE project_id=$1 AND lower(invitee_login)=lower($2) AND status='pending' AND expires_at<=now()`, projectID, username); err != nil {
+			return nil, err
+		}
+		invitation := api.Invitation{Inviter: actorLogin, Project: projectName}
+		err = tx.QueryRow(ctx, `INSERT INTO project_invitations(project_id,inviter_id,invitee_login,role) VALUES($1,$2,$3,$4) RETURNING id,project_id,role,expires_at`, projectID, userID, username, role).Scan(&invitation.ID, &invitation.ProjectID, &invitation.Role, &invitation.ExpiresAt)
+		if err != nil {
+			return nil, err
+		}
+		invitations = append(invitations, invitation)
 	}
-	var memberExists bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM project_members m JOIN users u ON u.id=m.user_id WHERE m.project_id=$1 AND lower(u.github_login)=lower($2))`, projectID, username).Scan(&memberExists); err != nil {
-		return api.Invitation{}, err
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
 	}
-	if memberExists {
-		return api.Invitation{}, ErrConflict
-	}
-	if _, err = tx.Exec(ctx, `UPDATE project_invitations SET status='declined',responded_at=now() WHERE project_id=$1 AND lower(invitee_login)=lower($2) AND status='pending' AND expires_at<=now()`, projectID, username); err != nil {
-		return api.Invitation{}, err
-	}
-	var invitation api.Invitation
-	err = tx.QueryRow(ctx, `INSERT INTO project_invitations(project_id,inviter_id,invitee_login,role) VALUES($1,$2,$3,$4) RETURNING id,project_id,role,expires_at`, projectID, userID, username, role).Scan(&invitation.ID, &invitation.ProjectID, &invitation.Role, &invitation.ExpiresAt)
-	if err != nil {
-		return api.Invitation{}, err
-	}
-	invitation.Inviter = actorLogin
-	if err = tx.QueryRow(ctx, `SELECT name FROM projects WHERE id=$1`, projectID).Scan(&invitation.Project); err != nil {
-		return api.Invitation{}, err
-	}
-	return invitation, tx.Commit(ctx)
+	return invitations, nil
 }
 
 func (store *Store) Members(ctx context.Context, userID, projectID string) ([]api.Member, error) {

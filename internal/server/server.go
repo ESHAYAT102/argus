@@ -314,24 +314,39 @@ func validateResourceName(kind, name string) error {
 
 func (server *Server) inviteMember(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
-		Username string `json:"username"`
-		Role     string `json:"role"`
+		Username  string   `json:"username"`
+		Usernames []string `json:"usernames"`
+		Role      string   `json:"role"`
 	}
 	if err := decode(request, &input); err != nil {
 		writeError(writer, http.StatusBadRequest, err.Error())
 		return
 	}
-	input.Username = strings.TrimSpace(strings.TrimPrefix(input.Username, "@"))
-	if !validGitHubUsername(input.Username) || !validRole(input.Role) {
-		writeError(writer, http.StatusBadRequest, "a GitHub username and valid role are required")
+	batch := len(input.Usernames) > 0
+	if input.Username != "" {
+		input.Usernames = append(input.Usernames, input.Username)
+	}
+	for index := range input.Usernames {
+		input.Usernames[index] = strings.TrimSpace(strings.TrimPrefix(input.Usernames[index], "@"))
+		if !validGitHubUsername(input.Usernames[index]) {
+			writeError(writer, http.StatusBadRequest, "every GitHub username must be valid")
+			return
+		}
+	}
+	if len(input.Usernames) == 0 || !validRole(input.Role) {
+		writeError(writer, http.StatusBadRequest, "at least one GitHub username and a valid role are required")
 		return
 	}
-	invitation, err := server.store.Invite(request.Context(), userID(request), request.PathValue("project"), input.Username, input.Role)
+	invitations, err := server.store.InviteMany(request.Context(), userID(request), request.PathValue("project"), input.Usernames, input.Role)
 	if err != nil {
 		problem(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusCreated, invitation)
+	if !batch && len(invitations) == 1 {
+		writeJSON(writer, http.StatusCreated, invitations[0])
+		return
+	}
+	writeJSON(writer, http.StatusCreated, map[string]any{"invitations": invitations})
 }
 
 func (server *Server) members(writer http.ResponseWriter, request *http.Request) {
