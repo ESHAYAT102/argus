@@ -54,6 +54,20 @@ type sharingClient struct {
 	role     string
 }
 
+type historyClient struct {
+	api.Client
+	projects  []api.Project
+	projectID string
+}
+
+func (client *historyClient) List(context.Context) ([]api.Project, error) {
+	return client.projects, nil
+}
+func (client *historyClient) History(_ context.Context, projectID string) ([]api.Activity, error) {
+	client.projectID = projectID
+	return nil, nil
+}
+
 func (client *sharingClient) List(context.Context) ([]api.Project, error) {
 	return client.projects, nil
 }
@@ -449,6 +463,42 @@ func TestStatusReportsMatchingEnvironment(t *testing.T) {
 	}
 	if got := output.String(); !strings.Contains(got, "Project: demo") || !strings.Contains(got, "Environment: dev") || !strings.Contains(got, "in sync") {
 		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestHistoryUsesCurrentProject(t *testing.T) {
+	t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+	directory := t.TempDir()
+	if err := config.Save(directory, config.Project{ProjectID: "current-id", ProjectName: "current"}); err != nil {
+		t.Fatal(err)
+	}
+	client := &historyClient{}
+	app := &application{client: client, out: &bytes.Buffer{}, cwd: func() (string, error) { return directory, nil }}
+	command := app.historyCommand()
+	if err := command.RunE(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	if client.projectID != "current-id" {
+		t.Fatalf("projectID = %q", client.projectID)
+	}
+}
+
+func TestHistoryUsesNamedProjectWithoutCurrentDirectory(t *testing.T) {
+	client := &historyClient{projects: []api.Project{{ID: "named-id", Name: "portfolio"}}}
+	app := &application{
+		client: client,
+		out:    &bytes.Buffer{},
+		cwd: func() (string, error) {
+			t.Fatal("named project history should not inspect the current directory")
+			return "", nil
+		},
+	}
+	command := app.historyCommand()
+	if err := command.RunE(command, []string{"Portfolio"}); err != nil {
+		t.Fatal(err)
+	}
+	if client.projectID != "named-id" {
+		t.Fatalf("projectID = %q", client.projectID)
 	}
 }
 

@@ -62,7 +62,7 @@ argus invites                       List pending invitations
 argus invites accept <id>           Accept an invitation
 argus invites decline <id>          Decline an invitation
 argus list                         List projects and environments
-argus history                      Show activity
+argus history [project]            Show current or named project activity
 argus remove <environment>         Remove an environment
 argus destroy <project>            Destroy a project by name
 ```

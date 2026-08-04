@@ -853,18 +853,18 @@ func (app *application) listCommand() *cobra.Command {
 }
 
 func (app *application) historyCommand() *cobra.Command {
-	return &cobra.Command{Use: "history", Aliases: []string{"activity"}, Short: "Show project activity", Args: noArgs, RunE: func(command *cobra.Command, _ []string) error {
-		projectID := ""
-		if directory, err := app.cwd(); err == nil {
-			if metadata, err := config.Load(directory); err == nil {
-				projectID = metadata.ProjectID
-			} else if discovered, discoveryErr := app.discover(directory); discoveryErr == nil {
-				if metadata, loadErr := config.Load(discovered.Root); loadErr == nil {
-					projectID = metadata.ProjectID
-				}
-			}
+	return &cobra.Command{Use: "history [project]", Aliases: []string{"activity"}, Short: "Show project activity", Example: "  argus history\n  argus history portfolio", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
+		var metadata config.Project
+		var err error
+		if len(args) == 1 {
+			metadata, err = app.destroyTarget(command.Context(), args[0])
+		} else {
+			_, metadata, err = app.projectContext(command.Context(), false)
 		}
-		activity, err := app.client.History(command.Context(), projectID)
+		if err != nil {
+			return err
+		}
+		activity, err := app.client.History(command.Context(), metadata.ProjectID)
 		if err != nil {
 			return err
 		}
