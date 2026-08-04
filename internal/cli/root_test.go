@@ -434,6 +434,21 @@ func TestRootDoesNotIncludeCompletionCommand(t *testing.T) {
 	}
 }
 
+func TestRootHelpShowsSharingWorkflow(t *testing.T) {
+	var output bytes.Buffer
+	app := &application{out: &output, errOut: &output}
+	root := app.rootCommand()
+	root.SetArgs([]string{"help"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"argus project share portfolio octocat", "argus project members portfolio", "argus invites accept <id>", "Link and share projects; manage members"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("help does not contain %q:\n%s", want, output.String())
+		}
+	}
+}
+
 func TestAuthDoesNotAuthenticateTwice(t *testing.T) {
 	var output bytes.Buffer
 	client := &authenticationClient{user: api.User{Username: "octocat"}}

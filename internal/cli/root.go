@@ -62,7 +62,11 @@ func (app *application) rootCommand() *cobra.Command {
   argus init dev
   argus push prod
   argus pull dev
-  argus set DATABASE_URL`,
+  argus set DATABASE_URL
+  argus project share portfolio octocat
+  argus project members portfolio
+  argus invites
+  argus invites accept <id>`,
 	}
 	root.SetIn(app.in)
 	root.SetOut(app.out)
@@ -508,7 +512,7 @@ func (app *application) deleteCommand() *cobra.Command {
 }
 
 func (app *application) projectCommand() *cobra.Command {
-	command := &cobra.Command{Use: "project", Short: "Manage project connections"}
+	command := &cobra.Command{Use: "project", Short: "Link and share projects; manage members"}
 	command.AddCommand(app.projectLinkCommand(), app.projectShareCommand(), app.projectMembersCommand(), app.projectRoleCommand(), app.projectUnshareCommand())
 	return command
 }
