@@ -260,7 +260,7 @@ func (app *application) logoutCommand() *cobra.Command {
 }
 
 func (app *application) initCommand() *cobra.Command {
-	return &cobra.Command{Use: "init [environment]", Short: "Initialize a project and push its .env", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "init [environment]", Short: "Initialize a project or add an environment", Args: atMostOneArg, RunE: func(command *cobra.Command, args []string) error {
 		directory, err := app.cwd()
 		if err != nil {
 			return err
@@ -269,11 +269,6 @@ func (app *application) initCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		values, err := dotenv.Read(directory)
-		if err != nil {
-			return err
-		}
-
 		name, repository := "", ""
 		discovered, discoveryErr := app.discover(directory)
 		if discoveryErr == nil {
@@ -284,6 +279,46 @@ func (app *application) initCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+		}
+		values, err := dotenv.Read(directory)
+		if err != nil {
+			return err
+		}
+
+		metadata, loadErr := config.Load(directory)
+		if loadErr != nil && !errors.Is(loadErr, os.ErrNotExist) {
+			return loadErr
+		}
+		if errors.Is(loadErr, os.ErrNotExist) && repository != "" {
+			projects, listErr := app.client.List(command.Context())
+			if listErr != nil {
+				return listErr
+			}
+			for _, candidate := range projects {
+				if strings.EqualFold(candidate.Repository, repository) {
+					metadata = config.Project{ProjectID: candidate.ID, ProjectName: candidate.Name}
+					loadErr = nil
+					break
+				}
+			}
+		}
+		if loadErr == nil {
+			exists, existsErr := app.client.EnvironmentExists(command.Context(), metadata.ProjectID, environment)
+			if existsErr != nil {
+				return existsErr
+			}
+			if exists {
+				return fmt.Errorf("environment %q already exists; use `argus push %s` to update it", environment, environment)
+			}
+			if _, err := app.client.Push(command.Context(), metadata.ProjectID, environment, values); err != nil {
+				return err
+			}
+			metadata.Environment = environment
+			if err := config.Save(directory, metadata); err != nil {
+				return err
+			}
+			fmt.Fprintf(app.out, "%s Initialized environment %s for %s (%d variables).\n", ui.Success.Render("✓"), environment, metadata.ProjectName, len(values))
+			return nil
 		}
 		created, _, err := app.client.InitProject(command.Context(), api.InitProjectRequest{Name: name, Repository: repository, Environment: environment, Variables: values})
 		if err != nil {

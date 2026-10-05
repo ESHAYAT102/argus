@@ -44,7 +44,7 @@ irm https://raw.githubusercontent.com/ESHAYAT102/argus/main/scripts/uninstall.ps
 argus auth                         Sign in with GitHub
 argus whoami                       Show the authenticated GitHub username
 argus logout                       Log out
-argus init [environment]           Create a project and push .env
+argus init [environment]           Create a project or add an environment
 argus push [environment]           Push .env
 argus pull [environment]           Pull into .env; auto-select the only environment
 argus rename <environment> <new-name> Rename an environment
@@ -74,6 +74,8 @@ argus destroy <project>            Destroy a project by name
 `argus status` compares `.env` with the active environment. `argus diff` shows only variable names marked as local-only, changed, or remote-only; secret values are never printed. These comparisons do not create fetch entries in project history.
 
 `argus delete` requires confirmation and removes the variable remotely before updating `.env`. `argus project link` stores the association in the user-wide registry below, never inside the project. When a project has multiple environments and none is supplied, Argus presents an environment picker.
+
+`argus init <environment>` creates the project when the current repository is new. In an initialized project, it creates and activates a missing environment without overwriting an existing one; use `argus push <environment>` to update an existing environment.
 
 `argus rename <environment> <new-name>` renames an environment in the current project. `argus project rename <project> <new-name>` renames a project. Successful renames update every matching entry in the user-wide registry and are recorded in activity history.
 

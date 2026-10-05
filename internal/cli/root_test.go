@@ -60,6 +60,36 @@ type historyClient struct {
 	projectID string
 }
 
+type initClient struct {
+	api.Client
+	projects          []api.Project
+	environmentExists bool
+	initCalls         int
+	pushProject       string
+	pushEnvironment   string
+	pushVariables     map[string]string
+}
+
+func (client *initClient) List(context.Context) ([]api.Project, error) {
+	return client.projects, nil
+}
+
+func (client *initClient) EnvironmentExists(context.Context, string, string) (bool, error) {
+	return client.environmentExists, nil
+}
+
+func (client *initClient) Push(_ context.Context, projectID, environment string, variables map[string]string) (api.Environment, error) {
+	client.pushProject = projectID
+	client.pushEnvironment = environment
+	client.pushVariables = variables
+	return api.Environment{ProjectID: projectID, Name: environment}, nil
+}
+
+func (client *initClient) InitProject(context.Context, api.InitProjectRequest) (api.Project, api.Environment, error) {
+	client.initCalls++
+	return api.Project{}, api.Environment{}, nil
+}
+
 func (client *historyClient) List(context.Context) ([]api.Project, error) {
 	return client.projects, nil
 }
@@ -411,6 +441,72 @@ func TestPushCommandReplacesSync(t *testing.T) {
 	}
 	if !foundPush {
 		t.Fatal("push command is not registered")
+	}
+}
+
+func TestInitAddsEnvironmentToInitializedProject(t *testing.T) {
+	t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("MODE=development\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(directory, config.Project{ProjectID: "project-id", ProjectName: "xenon", Environment: "prod"}); err != nil {
+		t.Fatal(err)
+	}
+	client := &initClient{}
+	var output bytes.Buffer
+	app := &application{
+		client: client,
+		out:    &output,
+		cwd:    func() (string, error) { return directory, nil },
+		discoverProject: func(string) (project.Discovery, error) {
+			return project.Discovery{Root: directory, Repository: "owner/xenon", Name: "xenon"}, nil
+		},
+	}
+	command := app.initCommand()
+	if err := command.RunE(command, []string{"dev"}); err != nil {
+		t.Fatal(err)
+	}
+	if client.initCalls != 0 || client.pushProject != "project-id" || client.pushEnvironment != "dev" || client.pushVariables["MODE"] != "development" {
+		t.Fatalf("client = %#v", client)
+	}
+	metadata, err := config.Load(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Environment != "dev" {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+	if !strings.Contains(output.String(), "Initialized environment dev for xenon") {
+		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestInitDoesNotOverwriteExistingEnvironment(t *testing.T) {
+	t.Setenv("ARGUS_DATA_HOME", t.TempDir())
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("MODE=development\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(directory, config.Project{ProjectID: "project-id", ProjectName: "xenon", Environment: "prod"}); err != nil {
+		t.Fatal(err)
+	}
+	client := &initClient{environmentExists: true}
+	app := &application{
+		client: client,
+		out:    &bytes.Buffer{},
+		cwd:    func() (string, error) { return directory, nil },
+		discoverProject: func(string) (project.Discovery, error) {
+			return project.Discovery{Root: directory, Repository: "owner/xenon", Name: "xenon"}, nil
+		},
+	}
+	command := app.initCommand()
+	err := command.RunE(command, []string{"prod"})
+	if err == nil || !strings.Contains(err.Error(), "use `argus push prod`") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if client.pushEnvironment != "" || client.initCalls != 0 {
+		t.Fatalf("client = %#v", client)
 	}
 }
 
